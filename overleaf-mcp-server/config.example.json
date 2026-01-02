@@ -1,0 +1,14 @@
+{
+    "privacy": {
+        "mode": "ask",
+        "warnSize": 5242880
+    },
+    "compilation": {
+        "engine": "pdflatex",
+        "timeout": 60000
+    },
+    "cache": {
+        "enabled": true,
+        "maxAge": 3600000
+    }
+}

@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.mcp-use/
+
+# Local data
+data/
+overleaf-mcp-server/projects/
+overleaf-mcp-server/cache/
+overleaf-mcp-server/logs/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Skills (if any)
+.github/skills/
