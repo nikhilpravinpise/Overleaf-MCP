@@ -2,25 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "overleaf-mcp-server/package.json",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": "overleaf-mcp-server/dist/**"
-      }
+      "src": "overleaf-mcp-server/api/index.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/mcp",
-      "dest": "overleaf-mcp-server/index.js"
+      "dest": "overleaf-mcp-server/api/index.js"
     },
     {
       "src": "/sse", 
-      "dest": "overleaf-mcp-server/index.js"
+      "dest": "overleaf-mcp-server/api/index.js"
     },
     {
       "src": "/(.*)",
-      "dest": "overleaf-mcp-server/index.js"
+      "dest": "overleaf-mcp-server/api/index.js"
     }
   ],
   "env": {
