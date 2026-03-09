@@ -65,20 +65,82 @@ export async function handleClientRegistration(body: {
 }): Promise<ClientRegistrationResponse> {
     await initializeStore();
 
-    if (!body.client_name || !body.redirect_uris?.length) {
-        throw createOAuthError('invalid_request', 'client_name and redirect_uris are required');
+    // Comprehensive input validation
+    if (!body || typeof body !== 'object') {
+        throw createOAuthError('invalid_request', 'Request body is required');
     }
 
-    // Validate redirect URIs (must be HTTPS or localhost)
+    // Validate client_name
+    if (!body.client_name || typeof body.client_name !== 'string') {
+        throw createOAuthError('invalid_request', 'client_name is required and must be a string');
+    }
+    
+    const clientName = body.client_name.trim();
+    if (clientName.length === 0) {
+        throw createOAuthError('invalid_request', 'client_name cannot be empty');
+    }
+    
+    if (clientName.length > 100) {
+        throw createOAuthError('invalid_request', 'client_name too long (max 100 characters)');
+    }
+    
+    // Validate redirect_uris
+    if (!Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0) {
+        throw createOAuthError('invalid_request', 'redirect_uris must be a non-empty array');
+    }
+    
+    if (body.redirect_uris.length > 5) {
+        throw createOAuthError('invalid_request', 'Too many redirect URIs (max 5)');
+    }
+
+    // Validate each redirect URI
     for (const uri of body.redirect_uris) {
-        if (!uri.startsWith('https://') && !uri.startsWith('http://localhost')) {
-            throw createOAuthError('invalid_request', 'redirect_uris must be HTTPS or localhost');
+        if (typeof uri !== 'string' || uri.trim().length === 0) {
+            throw createOAuthError('invalid_request', 'Each redirect_uri must be a non-empty string');
+        }
+        
+        const trimmedUri = uri.trim();
+        
+        // URL format validation
+        let parsedUrl: URL;
+        try {
+            parsedUrl = new URL(trimmedUri);
+        } catch {
+            throw createOAuthError('invalid_request', `Invalid redirect URI format: ${trimmedUri}`);
+        }
+        
+        // Only allow HTTPS or localhost HTTP for development
+        if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+            throw createOAuthError('invalid_request', 'redirect_uris must use HTTP or HTTPS protocol');
+        }
+        
+        if (parsedUrl.protocol === 'http:' && !parsedUrl.hostname?.includes('localhost')) {
+            throw createOAuthError('invalid_request', 'HTTP redirect URIs must be localhost only');
+        }
+        
+        // Reject potentially dangerous URLs
+        if (parsedUrl.username || parsedUrl.password) {
+            throw createOAuthError('invalid_request', 'redirect_uris cannot contain credentials');
+        }
+    }
+
+    // Validate grant_types if provided
+    if (body.grant_types) {
+        if (!Array.isArray(body.grant_types)) {
+            throw createOAuthError('invalid_request', 'grant_types must be an array');
+        }
+        
+        const validGrantTypes = ['authorization_code', 'refresh_token'];
+        for (const grantType of body.grant_types) {
+            if (typeof grantType !== 'string' || !validGrantTypes.includes(grantType)) {
+                throw createOAuthError('invalid_request', `Invalid grant_type: ${grantType}`);
+            }
         }
     }
 
     const { client, clientSecret } = await createClient({
-        clientName: body.client_name,
-        redirectUris: body.redirect_uris,
+        clientName,
+        redirectUris: body.redirect_uris.map(uri => uri.trim()),
         grantTypes: body.grant_types,
     });
 
@@ -251,23 +313,55 @@ export async function handleToken(body: {
 }): Promise<TokenResponse> {
     await initializeStore();
 
+    // Comprehensive input validation
+    if (!body || typeof body !== 'object') {
+        throw createOAuthError('invalid_request', 'Request body is required');
+    }
+
+    // Validate grant_type
+    if (!body.grant_type || typeof body.grant_type !== 'string') {
+        throw createOAuthError('invalid_request', 'grant_type is required and must be a string');
+    }
+
+    const grantType = body.grant_type.trim();
+    if (!['authorization_code', 'refresh_token'].includes(grantType)) {
+        throw createOAuthError('unsupported_grant_type', `Grant type "${grantType}" is not supported`);
+    }
+
+    // Validate client_id
+    if (!body.client_id || typeof body.client_id !== 'string') {
+        throw createOAuthError('invalid_request', 'client_id is required and must be a string');
+    }
+
+    const clientId = body.client_id.trim();
+    if (clientId.length === 0) {
+        throw createOAuthError('invalid_request', 'client_id cannot be empty');
+    }
+
     // Validate client
-    const client = await getClient(body.client_id);
+    const client = await getClient(clientId);
     if (!client) {
         throw createOAuthError('invalid_client', 'Unknown client');
     }
 
-    // Verify client secret if provided
-    if (body.client_secret && !(await verifyClientSecret(body.client_id, body.client_secret))) {
-        throw createOAuthError('invalid_client', 'Invalid client credentials');
+    // Verify client secret if provided (must match for confidential clients)
+    if (body.client_secret) {
+        if (typeof body.client_secret !== 'string') {
+            throw createOAuthError('invalid_client', 'client_secret must be a string');
+        }
+        
+        if (!(await verifyClientSecret(clientId, body.client_secret))) {
+            throw createOAuthError('invalid_client', 'Invalid client credentials');
+        }
     }
 
-    if (body.grant_type === 'authorization_code') {
-        return handleAuthorizationCodeGrant(body);
-    } else if (body.grant_type === 'refresh_token') {
-        return handleRefreshTokenGrant(body);
+    // Route to appropriate grant handler
+    if (grantType === 'authorization_code') {
+        return handleAuthorizationCodeGrant({ ...body, client_id: clientId });
+    } else if (grantType === 'refresh_token') {
+        return handleRefreshTokenGrant({ ...body, client_id: clientId });
     } else {
-        throw createOAuthError('unsupported_grant_type', `Grant type "${body.grant_type}" is not supported`);
+        throw createOAuthError('unsupported_grant_type', `Grant type "${grantType}" is not supported`);
     }
 }
 
