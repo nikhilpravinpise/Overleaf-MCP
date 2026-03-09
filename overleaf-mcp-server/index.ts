@@ -3,7 +3,7 @@
  * 
  * This is the main server file that:
  * - Initializes the MCP server with mcp-use
- * - Registers all 16 tools, 7 prompts, and 6 resources
+ * - Registers all 19 tools, 7 prompts, and 6 resources
  * - Starts listening for MCP connections
  * 
  * @module index
@@ -14,7 +14,7 @@
 import { MCPServer } from "mcp-use/server";
 import { registerTools } from "./tools/index.js";
 import { registerPrompts } from "./prompts/index.js";
-import { projectStore } from "./lib/index.js";
+import { projectStore, startRateLimitCleanup } from "./lib/index.js";
 
 // ============================================
 // Server Configuration
@@ -188,22 +188,79 @@ import {
 
 if (oauthConfig.enabled) {
     await initializeStore();
+    // Start lazy cleanup timers for OAuth store
+    const { startCleanupTimer } = await import('./lib/oauth/store.js');
+    startCleanupTimer();
     console.log("🔐 OAuth 2.1 enabled");
 }
 
-// === OAuth Endpoints (registered via server's HTTP layer) ===
-// These endpoints are available when accessing the server directly
+// Start rate limit cleanup timer
+startRateLimitCleanup();
 
-// Note: mcp-use handles its own HTTP routing. For OAuth endpoints, 
-// we export handlers that can be used with the server's HTTP layer.
-export {
-    handleMetadata as oauthMetadata,
-    handleClientRegistration as oauthRegister,
-    handleAuthorizeGet as oauthAuthorizeGet,
-    handleAuthorizePost as oauthAuthorizePost,
-    handleToken as oauthToken,
-    handleRevoke as oauthRevoke,
-};
+// === Mount OAuth HTTP Endpoints ===
+// These endpoints implement the OAuth 2.1 flow required for ChatGPT App integration
+
+if (oauthConfig.enabled && (server as any).app) {
+    const app = (server as any).app;
+
+    // RFC 8414 - Authorization Server Metadata Discovery
+    app.get('/.well-known/oauth-authorization-server', (_req: any, res: any) => {
+        res.json(handleMetadata());
+    });
+
+    // RFC 7591 - Dynamic Client Registration
+    app.post('/register', async (req: any, res: any) => {
+        try {
+            const result = await handleClientRegistration(req.body);
+            res.status(201).json(result);
+        } catch (err: any) {
+            res.status(400).json({ error: err.error || 'invalid_request', error_description: err.error_description || err.message });
+        }
+    });
+
+    // Authorization Endpoint (GET renders consent page, POST processes login)
+    app.get('/authorize', (req: any, res: any) => {
+        const html = handleAuthorizeGet(req.query);
+        res.type('html').send(html);
+    });
+
+    app.post('/authorize', async (req: any, res: any) => {
+        try {
+            const result = await handleAuthorizePost(req.body);
+            if ('redirectUrl' in result) {
+                res.redirect(result.redirectUrl);
+            } else {
+                res.type('html').send(result.html);
+            }
+        } catch (err: any) {
+            res.status(500).json({ error: 'server_error', error_description: err.message });
+        }
+    });
+
+    // Token Endpoint
+    app.post('/token', async (req: any, res: any) => {
+        try {
+            const result = await handleToken(req.body);
+            res.json(result);
+        } catch (err: any) {
+            const status = err.error === 'invalid_client' ? 401 : 400;
+            res.status(status).json({ error: err.error || 'invalid_request', error_description: err.error_description || err.message });
+        }
+    });
+
+    // Revocation Endpoint (RFC 7009)
+    app.post('/revoke', async (req: any, res: any) => {
+        try {
+            await handleRevoke(req.body);
+            res.status(200).end();
+        } catch (err: any) {
+            // RFC 7009 says revocation always returns 200
+            res.status(200).end();
+        }
+    });
+
+    console.log("   OAuth endpoints: /.well-known/oauth-authorization-server, /authorize, /token, /register, /revoke");
+}
 
 // === Start Server ===
 server.listen();
@@ -213,4 +270,3 @@ console.log("   Tools: 19 registered");
 console.log("   Resources: 6 registered");
 console.log("   Prompts: 7 registered");
 console.log(`   OAuth: ${oauthConfig.enabled ? 'ENABLED' : 'disabled'}`);
-

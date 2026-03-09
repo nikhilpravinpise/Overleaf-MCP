@@ -1,4 +1,4 @@
-import type { CompileError, CompileWarning, ParsedLog } from "./types.js";
+import type { CompileError, CompileWarning, ParsedLog, ValidationResult } from "./types.js";
 
 // ============================================
 // LaTeX Log Parser
@@ -27,18 +27,20 @@ export function parseLog(rawLog: string): ParsedLog {
         }
 
         // Pattern: LaTeX Error: ...
-        const latexErrorMatch = line.match(/^LaTeX Error:\s*(.+)/i);
-        if (latexErrorMatch) {
-            const lineNum = extractLineNumber(lines, i);
-            errors.push({
-                line: lineNum,
-                message: latexErrorMatch[1].trim(),
-                type: "other",
-            });
+        else if (/^LaTeX Error:/i.test(line)) {
+            const latexErrorMatch = line.match(/^LaTeX Error:\s*(.+)/i);
+            if (latexErrorMatch) {
+                const lineNum = extractLineNumber(lines, i);
+                errors.push({
+                    line: lineNum,
+                    message: latexErrorMatch[1].trim(),
+                    type: "other",
+                });
+            }
         }
 
-        // Pattern: Missing $ inserted
-        if (line.includes("Missing $ inserted") || line.includes("Missing } inserted")) {
+        // Pattern: Missing $ inserted (only if not already caught by ! prefix)
+        else if (line.includes("Missing $ inserted") || line.includes("Missing } inserted")) {
             const lineNum = extractLineNumber(lines, i);
             errors.push({
                 line: lineNum,
@@ -200,7 +202,7 @@ function generateSummary(errors: CompileError[], warnings: CompileWarning[]): st
 /**
  * Quick validation check (without full compilation)
  */
-export function quickValidate(content: string): { valid: boolean; issues: string[] } {
+export function quickValidate(content: string): ValidationResult {
     const issues: string[] = [];
 
     // Check for \documentclass
@@ -218,15 +220,22 @@ export function quickValidate(content: string): { valid: boolean; issues: string
         issues.push("Missing \\end{document}");
     }
 
-    // Check for unbalanced braces
-    const openBraces = (content.match(/\{/g) || []).length;
-    const closeBraces = (content.match(/\}/g) || []).length;
+    // CQ-11: Strip comments and verbatim environments before counting braces
+    // to reduce false positives
+    const strippedContent = content
+        .replace(/\\verb[^a-zA-Z].*?[^a-zA-Z]/g, '')  // Remove \verb|...|
+        .replace(/\\begin\{verbatim\}[\s\S]*?\\end\{verbatim\}/g, '') // Remove verbatim environments
+        .replace(/%[^\n]*/g, ''); // Remove % comments
+
+    // Check for unbalanced braces (on stripped content)
+    const openBraces = (strippedContent.match(/(?<!\\)\{/g) || []).length;
+    const closeBraces = (strippedContent.match(/(?<!\\)\}/g) || []).length;
     if (openBraces !== closeBraces) {
         issues.push(`Unbalanced braces: ${openBraces} open, ${closeBraces} close`);
     }
 
     // Check for unbalanced $ (math mode)
-    const dollarSigns = (content.match(/(?<!\\)\$/g) || []).length;
+    const dollarSigns = (strippedContent.match(/(?<!\\)\$/g) || []).length;
     if (dollarSigns % 2 !== 0) {
         issues.push("Unbalanced $ (math mode delimiters)");
     }

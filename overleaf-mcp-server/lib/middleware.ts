@@ -102,8 +102,13 @@ export function cleanupRateLimits(): void {
     }
 }
 
-// Clean up every 5 minutes
-setInterval(cleanupRateLimits, 5 * 60 * 1000);
+// CQ-15: Lazy cleanup — start only when needed
+let rateLimitCleanupTimer: ReturnType<typeof setInterval> | null = null;
+export function startRateLimitCleanup(): void {
+    if (rateLimitCleanupTimer) return;
+    rateLimitCleanupTimer = setInterval(cleanupRateLimits, 5 * 60 * 1000);
+    if (rateLimitCleanupTimer.unref) rateLimitCleanupTimer.unref();
+}
 
 // ============================================
 // Authentication

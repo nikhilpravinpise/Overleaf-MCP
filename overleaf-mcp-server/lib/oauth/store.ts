@@ -98,9 +98,44 @@ async function saveJson<T>(path: string, data: Map<string, T>): Promise<void> {
 }
 
 // ============================================
-// Password Hashing
+// Password Hashing (scrypt — no external dependency)
 // ============================================
 
+/**
+ * Hash a password using scrypt with a random salt.
+ * Format: salt:hash (both hex-encoded)
+ */
+async function hashPasswordAsync(password: string): Promise<string> {
+    const { scrypt, randomBytes } = await import('crypto');
+    const { promisify } = await import('util');
+    const scryptAsync = promisify(scrypt);
+    const salt = randomBytes(16).toString('hex');
+    const derived = (await scryptAsync(password, salt, 64)) as Buffer;
+    return `${salt}:${derived.toString('hex')}`;
+}
+
+/**
+ * Verify a password against a scrypt hash.
+ */
+async function verifyPasswordAsync(password: string, storedHash: string): Promise<boolean> {
+    const { scrypt, timingSafeEqual } = await import('crypto');
+    const { promisify } = await import('util');
+    const scryptAsync = promisify(scrypt);
+
+    // Support legacy SHA-256 hashes (no colon separator)
+    if (!storedHash.includes(':')) {
+        // Legacy SHA-256 format — for backward compatibility
+        const legacyHash = createHash('sha256').update(password + oauthConfig.jwtSecret).digest('hex');
+        return legacyHash === storedHash;
+    }
+
+    const [salt, hash] = storedHash.split(':');
+    const derived = (await scryptAsync(password, salt, 64)) as Buffer;
+    const hashBuffer = Buffer.from(hash, 'hex');
+    return timingSafeEqual(derived, hashBuffer);
+}
+
+// Synchronous legacy wrappers (for client secret — lower risk)
 function hashPassword(password: string): string {
     return createHash('sha256').update(password + oauthConfig.jwtSecret).digest('hex');
 }
@@ -176,7 +211,7 @@ export async function createUser(data: {
     const user: OAuthUser = {
         user_id: userId,
         email: data.email,
-        password_hash: hashPassword(data.password),
+        password_hash: await hashPasswordAsync(data.password),
         display_name: data.displayName,
         created_at: now,
         updated_at: now,
@@ -201,7 +236,7 @@ export async function getUserByEmail(email: string): Promise<OAuthUser | null> {
 export async function verifyUserPassword(email: string, password: string): Promise<OAuthUser | null> {
     const user = await getUserByEmail(email);
     if (!user) return null;
-    if (!verifyPassword(password, user.password_hash)) return null;
+    if (!(await verifyPasswordAsync(password, user.password_hash))) return null;
 
     // Update last login
     user.last_login = new Date().toISOString();
@@ -340,5 +375,11 @@ export async function cleanupExpiredEntries(): Promise<void> {
     await saveJson(TOKENS_FILE, tokens);
 }
 
-// Run cleanup every hour
-setInterval(cleanupExpiredEntries, 60 * 60 * 1000);
+// Run cleanup every hour (only if store has been initialized)
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+export function startCleanupTimer(): void {
+    if (cleanupTimer) return;
+    cleanupTimer = setInterval(cleanupExpiredEntries, 60 * 60 * 1000);
+    // Allow process to exit even if timer is running
+    if (cleanupTimer.unref) cleanupTimer.unref();
+}

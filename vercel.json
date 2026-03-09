@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "overleaf-mcp-server/package.json",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/mcp",
+      "dest": "overleaf-mcp-server/index.js"
+    },
+    {
+      "src": "/sse", 
+      "dest": "overleaf-mcp-server/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "overleaf-mcp-server/index.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

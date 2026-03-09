@@ -13,7 +13,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/Overleaf-MCP.git
+git clone https://github.com/N1KH1LT0X1N/Overleaf-MCP.git
 cd Overleaf-MCP/overleaf-mcp-server
 
 # Install dependencies
@@ -74,7 +74,7 @@ npm run dev
 
 ### TypeScript
 
-- Use strict TypeScript (`"strict": true` in tsconfig)
+- Use TypeScript with proper type annotations
 - Add JSDoc comments to all exported functions and interfaces
 - Use Zod for runtime validation
 

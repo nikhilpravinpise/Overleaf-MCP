@@ -20,7 +20,7 @@ This document describes the internal architecture of the Overleaf MCP Server.
 │             │                           │                           │
 │  ┌──────────▼──────────┐     ┌──────────▼──────────┐              │
 │  │    tools/index.ts   │     │  prompts/index.ts   │              │
-│  │     18 MCP Tools    │     │    7 MCP Prompts    │              │
+│  │     19 MCP Tools    │     │    7 MCP Prompts    │              │
 │  └──────────┬──────────┘     └─────────────────────┘              │
 │             │                                                       │
 │  ┌──────────▼──────────────────────────────────────────────────┐   │
@@ -29,10 +29,15 @@ This document describes the internal architecture of the Overleaf MCP Server.
 │  │  │LocalProjectStore│  │LaTeXOnlineClient│  │  LogParser   │ │   │
 │  │  │  (File System)  │  │ (Compilation)   │  │(Error Parse) │ │   │
 │  │  └─────────────────┘  └─────────────────┘  └──────────────┘ │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐                   │   │
-│  │  │OpenInOverleafCl.│  │   CTANClient    │                   │   │
-│  │  │  (URL Generate) │  │ (Package Search)│                   │   │
-│  │  └─────────────────┘  └─────────────────┘                   │   │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │   │
+│  │  │OpenInOverleafCl.│  │   CTANClient    │  │  middleware   │ │   │
+│  │  │  (URL Generate) │  │ (Package Search)│  │(Rate/Auth/Log)│ │   │
+│  │  └─────────────────┘  └─────────────────┘  └──────────────┘ │   │
+│  │  ┌──────────────────────────────────────────────────────────┐│   │
+│  │  │                    lib/oauth/                             ││   │
+│  │  │  config │ types │ handlers │ jwt │ pkce │ store │ mw     ││   │
+│  │  │            OAuth 2.1 Authentication Flow                 ││   │
+│  │  └──────────────────────────────────────────────────────────┘│   │
 │  └──────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
                           │
@@ -49,17 +54,27 @@ This document describes the internal architecture of the Overleaf MCP Server.
 
 ```
 overleaf-mcp-server/
-├── index.ts              # Server entry, resource definitions
+├── index.ts              # Server entry, resource definitions, OAuth routes
 ├── lib/                  # Core business logic
 │   ├── types.ts          # TypeScript interfaces (inc. ChatGPT types)
-│   ├── LocalProjectStore.ts  # File system + search operations
-│   ├── LaTeXOnlineClient.ts  # Cloud compilation
+│   ├── LocalProjectStore.ts  # File system + search operations (path-safe)
+│   ├── LaTeXOnlineClient.ts  # Cloud compilation + log caching
 │   ├── LogParser.ts      # Log parsing & validation
-│   ├── OpenInOverleafClient.ts # URL generation
-│   ├── CTANClient.ts     # CTAN package API
-│   └── index.ts          # Barrel exports
+│   ├── OpenInOverleafClient.ts # URL generation (with size checks)
+│   ├── CTANClient.ts     # CTAN package API (bounded cache)
+│   ├── middleware.ts      # Rate limiting, auth, logging, health
+│   ├── index.ts          # Barrel exports
+│   └── oauth/            # OAuth 2.1 module
+│       ├── config.ts     # Environment-based config
+│       ├── types.ts      # OAuth type definitions
+│       ├── handlers.ts   # HTTP endpoint handlers (XSS-safe)
+│       ├── jwt.ts        # JWT generation & validation
+│       ├── pkce.ts       # PKCE utilities
+│       ├── store.ts      # Persistent storage (scrypt passwords)
+│       ├── middleware.ts  # Bearer token validation
+│       └── index.ts      # Barrel exports
 ├── tools/
-│   └── index.ts          # All 18 MCP tool definitions
+│   └── index.ts          # All 19 MCP tool definitions
 ├── prompts/
 │   └── index.ts          # All 7 MCP prompt definitions
 ├── projects/             # User project storage (gitignored)
@@ -71,108 +86,74 @@ overleaf-mcp-server/
 
 ### LocalProjectStore
 
-Handles all file system operations for projects.
+Handles all file system operations with path traversal protection.
 
 ```typescript
 // Key methods:
-createProject(name, template?)  // Create new project
+createProject(name, template?)  // Create new project (name validated)
 listProjects()                  // Enumerate all projects
-readFile(project, path)         // Read file content
+readFile(project, path)         // Read file content (path-safe)
 writeFile(project, path, content)
-searchContent(query, limit?)    // ChatGPT Deep Research search
+searchContent(query, limit?)    // ChatGPT Deep Research search (ReDoS-safe)
 createTarball(project)          // For LaTeX.Online
 createZip(project)              // For Open in Overleaf
 savePdfToCache(project, pdf)    // Cache compiled PDFs
+saveLogToCache(project, log)    // Cache compilation logs
 ```
 
 ### LaTeXOnlineClient
 
-Handles compilation via LaTeX.Online API.
+Handles compilation via LaTeX.Online API with log caching.
 
 ```typescript
 // Compilation methods:
 compileText(content)            // Single file compilation
-compileProject(project, root?)  // Main file compilation
+compileProject(project, root?)  // Main file compilation + log caching
 ```
 
 ### LogParser
 
-Extracts structured data from LaTeX logs.
+Extracts structured data from LaTeX logs (no duplicate error reporting).
 
 ```typescript
 // Parsing methods:
 parseLog(logContent)            // Full log analysis
-quickValidate(content)          // Fast syntax check
+quickValidate(content)          // Fast syntax check (comment-aware)
 ```
 
-### OpenInOverleafClient
+### OAuth 2.1 Module
 
-Generates "Open in Overleaf" URLs.
+Full OAuth 2.1 implementation for ChatGPT App integration.
 
 ```typescript
-// URL generation methods:
-generateFromContent(content)    // Base64 single file
-generateFromProject(project)    // Base64 ZIP
-generateFromUrl(texUrl)         // Remote URL reference
-generateFromMultipleUrls(files) // Multiple remote files
+// OAuth flow:
+handleMetadata()                // RFC 8414 discovery
+handleClientRegistration(body)  // RFC 7591 dynamic registration
+handleAuthorizeGet(params)      // Consent page (XSS-safe)
+handleAuthorizePost(body)       // Login + authorization
+handleToken(body)               // Token exchange (PKCE)
+handleRevoke(body)              // RFC 7009 revocation
 ```
 
-### CTANClient
+### Middleware
 
-Searches and retrieves package information.
+Production-ready middleware for rate limiting, auth, logging, and health.
 
 ```typescript
-// CTAN API methods:
-searchPackages(query, limit?)   // Search packages
-getPackageInfo(name)            // Get package details
+checkRateLimit(ip)              // Per-IP rate limiting
+validateApiKey(header)          // API key authentication
+logger.info/warn/error()        // Structured logging
+getHealthStatus()               // Server health check
 ```
 
-## Data Flow
+## Security
 
-### ChatGPT Deep Research Flow
-
-```
-1. ChatGPT calls `search` tool with query
-2. LocalProjectStore.searchContent() scans all projects
-3. Results returned in OpenAI format (JSON in text content)
-4. ChatGPT calls `fetch` tool with document ID
-5. Full document content returned with metadata
-6. ChatGPT uses content for research/analysis
-```
-
-### Compilation Flow
-
-```
-1. User calls latex_compile tool
-2. LocalProjectStore reads main file content
-3. LaTeXOnlineClient.compileText() sends to API
-4. Response parsed (PDF or log)
-5. Results cached locally
-6. Structured result returned to user
-```
-
-### Open in Overleaf Flow
-
-```
-1. User calls latex_open_in_overleaf tool
-2. LocalProjectStore.createZip() packages project
-3. OpenInOverleafClient.generateFromProject() creates URL
-4. Base64-encoded ZIP embedded in URL
-5. User can click URL to import into Overleaf
-```
-
-## External Services
-
-| Service | URL | Rate Limits | Data Sent |
-|---------|-----|-------------|-----------|
-| LaTeX.Online | latexonline.cc | None (public) | LaTeX source |
-| CTAN API | ctan.org/json/2.0 | None | Search queries only |
-| Overleaf | overleaf.com/docs | None | Via generated URL |
-
-## Security Considerations
-
-1. **Local Storage**: All projects stored locally, never uploaded without user action
-2. **Privacy Modes**: Configurable privacy settings (ask/allow/local)
-3. **Size Warnings**: Warns before uploading large projects
-4. **No Credentials**: No API keys or authentication required
-5. **ChatGPT Connectors**: Data only sent when explicitly using search/fetch tools
+1. **Path Traversal Protection**: All file paths validated against project directory
+2. **Project Name Validation**: Regex-enforced alphanumeric names
+3. **XSS Prevention**: HTML-escaped OAuth consent/error pages
+4. **ReDoS Prevention**: User search queries are regex-escaped
+5. **Scrypt Password Hashing**: User passwords hashed with scrypt + random salt
+6. **PKCE**: Authorization code flow uses S256 code challenges
+7. **Size Limits**: ZIP upload and content size checks
+8. **Local Storage**: Projects stored locally, never uploaded without user action
+9. **ChatGPT Connectors**: Data only sent when explicitly using search/fetch tools

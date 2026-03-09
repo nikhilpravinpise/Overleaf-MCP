@@ -8,7 +8,6 @@ import {
     parseLog,
     quickValidate,
     getHealthStatus,
-    checkRateLimit,
     logger,
 } from "../lib/index.js";
 
@@ -41,13 +40,13 @@ export function registerTools(server: MCPServer) {
         name: "latex_create_project",
         description: "Create a new LaTeX project",
         schema: z.object({
-            name: z.string().describe("Project name"),
+            project: z.string().describe("Project name"),
             template: z.string().optional().describe("Initial template content"),
         }),
-    }, async ({ name, template }) => {
-        const project = await projectStore.createProject(name, template);
+    }, async ({ project, template }) => {
+        const created = await projectStore.createProject(project, template);
         return {
-            content: [{ type: "text", text: `Created project "${project.name}" at ${project.path}` }],
+            content: [{ type: "text", text: `Created project "${created.name}" at ${created.path}` }],
         };
     });
 
@@ -72,23 +71,23 @@ export function registerTools(server: MCPServer) {
         name: "latex_delete_project",
         description: "Delete a LaTeX project",
         schema: z.object({
-            name: z.string().describe("Project name"),
+            project: z.string().describe("Project name"),
         }),
         annotations: { destructiveHint: true },
-    }, async ({ name }) => {
-        await projectStore.deleteProject(name);
-        return { content: [{ type: "text", text: `Deleted project "${name}"` }] };
+    }, async ({ project }) => {
+        await projectStore.deleteProject(project);
+        return { content: [{ type: "text", text: `Deleted project "${project}"` }] };
     });
 
     server.tool({
         name: "latex_project_status",
         description: "Get detailed status of a project",
         schema: z.object({
-            name: z.string().describe("Project name"),
+            project: z.string().describe("Project name"),
         }),
         annotations: { readOnlyHint: true },
-    }, async ({ name }) => {
-        const status = await projectStore.getProjectStatus(name);
+    }, async ({ project }) => {
+        const status = await projectStore.getProjectStatus(project);
         return {
             content: [{
                 type: "text",
@@ -189,10 +188,10 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         name: "latex_analyze_log",
         description: "Analyze the last compilation log",
         schema: z.object({
-            name: z.string().describe("Project name"),
+            project: z.string().describe("Project name"),
         }),
-    }, async ({ name }) => {
-        const log = await projectStore.getCachedLog(name);
+    }, async ({ project }) => {
+        const log = await projectStore.getCachedLog(project);
         if (!log) {
             return { content: [{ type: "text", text: "No compilation log found. Run latex_compile first." }] };
         }
@@ -229,10 +228,10 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         name: "latex_export_zip",
         description: "Export project as a ZIP file (base64)",
         schema: z.object({
-            name: z.string().describe("Project name"),
+            project: z.string().describe("Project name"),
         }),
-    }, async ({ name }) => {
-        const zipBuffer = await projectStore.createZip(name);
+    }, async ({ project }) => {
+        const zipBuffer = await projectStore.createZip(project);
         const base64 = zipBuffer.toString("base64");
         return {
             content: [{ type: "text", text: `ZIP created (${Math.round(zipBuffer.length / 1024)}KB)\n\nBase64 (first 100 chars): ${base64.substring(0, 100)}...` }],
@@ -275,12 +274,12 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         name: "latex_get_package_info",
         description: "Get detailed info about a LaTeX package",
         schema: z.object({
-            name: z.string().describe("Package name"),
+            packageName: z.string().describe("Package name"),
         }),
-    }, async ({ name }) => {
-        const pkg = await ctanClient.getPackageInfo(name);
+    }, async ({ packageName }) => {
+        const pkg = await ctanClient.getPackageInfo(packageName);
         if (!pkg) {
-            return { content: [{ type: "text", text: `Package "${name}" not found on CTAN.` }] };
+            return { content: [{ type: "text", text: `Package "${packageName}" not found on CTAN.` }] };
         }
         return {
             content: [{

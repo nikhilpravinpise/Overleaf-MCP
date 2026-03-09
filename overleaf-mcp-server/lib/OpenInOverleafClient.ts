@@ -61,6 +61,17 @@ export class OpenInOverleafClient {
     ): Promise<string> {
         // Create ZIP of project
         const zipBuffer = await projectStore.createZip(projectName);
+
+        // BUG-6: Check ZIP size — URL parameters have limited space
+        const MAX_ZIP_SIZE = 1 * 1024 * 1024; // 1MB limit for data URLs
+        if (zipBuffer.length > MAX_ZIP_SIZE) {
+            throw new Error(
+                `Project ZIP is too large (${Math.round(zipBuffer.length / 1024)}KB). ` +
+                `Maximum is ${MAX_ZIP_SIZE / 1024}KB for URL-based upload. ` +
+                `Consider uploading the ZIP directly to Overleaf instead.`
+            );
+        }
+
         const zipBase64 = zipBuffer.toString("base64");
 
         // Find main file if not specified
@@ -76,7 +87,9 @@ export class OpenInOverleafClient {
             params.set("main_document", mainFile);
         }
 
-        this.addOptions(params, options);
+        // Pass options but skip mainDocument since we already handled it above
+        const filteredOptions = { ...options, mainDocument: undefined };
+        this.addOptions(params, filteredOptions);
 
         return `${this.baseUrl}?${params.toString()}`;
     }

@@ -1,0 +1,12 @@
+{
+  "name": "overleaf-mcp-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd overleaf-mcp-server && npm run build",
+    "start": "cd overleaf-mcp-server && npm start"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -105,6 +105,8 @@ export interface CompileResult {
     pdfBase64?: string;
     /** Local path to cached log file */
     logPath?: string;
+    /** Raw log text from compilation (for caching and analysis) */
+    rawLog?: string;
     /** All errors extracted from the log */
     errors: CompileError[];
     /** All warnings extracted from the log */
@@ -288,32 +290,11 @@ export const DEFAULT_CONFIG: Config = {
 export interface ValidationResult {
     /** Whether content passed all checks */
     valid: boolean;
-    /** List of issues found */
-    errors: Array<{
-        /** Line number of the issue */
-        line: number;
-        /** Description of the issue */
-        message: string;
-    }>;
+    /** List of issue descriptions */
+    issues: string[];
 }
 
-// ============================================
-// Symbol Types
-// ============================================
 
-/**
- * A LaTeX symbol with its code and metadata.
- */
-export interface LaTeXSymbol {
-    /** Symbol name (e.g., "alpha") */
-    name: string;
-    /** LaTeX code (e.g., "\\alpha") */
-    code: string;
-    /** Symbol category (e.g., "greek", "math", "arrows") */
-    category: string;
-    /** Optional description */
-    description?: string;
-}
 
 // ============================================
 // ChatGPT Connector Types (Deep Research)

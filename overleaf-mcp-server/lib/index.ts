@@ -29,5 +29,6 @@ export {
     logRequest,
     getHealthStatus,
     securityHeaders,
+    startRateLimitCleanup,
 } from "./middleware.js";
 

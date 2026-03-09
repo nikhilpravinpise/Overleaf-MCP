@@ -28,11 +28,13 @@ export class CTANClient {
     private baseUrl: string;
     private cache: Map<string, { data: any; timestamp: number }>;
     private cacheMaxAge: number;
+    private cacheMaxSize: number;
 
-    constructor(baseUrl?: string, cacheMaxAge?: number) {
+    constructor(baseUrl?: string, cacheMaxAge?: number, cacheMaxSize?: number) {
         this.baseUrl = baseUrl || CTAN_API_BASE;
         this.cache = new Map();
         this.cacheMaxAge = cacheMaxAge || 24 * 60 * 60 * 1000; // 24 hours
+        this.cacheMaxSize = cacheMaxSize || 500;
     }
 
     // === Search Packages ===
@@ -167,6 +169,15 @@ export class CTANClient {
     }
 
     private setCache(key: string, data: any): void {
+        // Evict oldest entries if cache is too large
+        if (this.cache.size >= this.cacheMaxSize) {
+            const entries = Array.from(this.cache.entries())
+                .sort(([, a], [, b]) => a.timestamp - b.timestamp);
+            const toRemove = entries.slice(0, Math.floor(this.cacheMaxSize * 0.2));
+            for (const [k] of toRemove) {
+                this.cache.delete(k);
+            }
+        }
         this.cache.set(key, { data, timestamp: Date.now() });
     }
 

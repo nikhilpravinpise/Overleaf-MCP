@@ -443,6 +443,18 @@ function createOAuthError(error: string, description: string): OAuthError & Erro
     return err;
 }
 
+/**
+ * Escape HTML special characters to prevent XSS.
+ */
+function escapeHtml(str: string): string {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function errorPage(error: string, description: string): string {
     return `<!DOCTYPE html>
 <html>
@@ -457,8 +469,8 @@ function errorPage(error: string, description: string): string {
 </head>
 <body>
   <div class="error">
-    <h1>Error: ${error}</h1>
-    <p>${description}</p>
+    <h1>Error: ${escapeHtml(error)}</h1>
+    <p>${escapeHtml(description)}</p>
   </div>
 </body>
 </html>`;
@@ -513,7 +525,7 @@ function getConsentPage(params: {
       </div>
     </div>
 
-    ${params.error ? `<div class="error-msg">${params.error}</div>` : ''}
+    ${params.error ? `<div class="error-msg">${escapeHtml(params.error)}</div>` : ''}
 
     <div class="tabs">
       <button class="tab active" onclick="showTab('login')">Sign In</button>

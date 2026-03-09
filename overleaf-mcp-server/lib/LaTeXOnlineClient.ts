@@ -49,7 +49,7 @@ export class LaTeXOnlineClient {
                 options.timeout || this.defaultTimeout
             );
 
-            return this.handleResponse(response, startTime);
+            return await this.handleResponse(response, startTime);
         } catch (error: any) {
             return {
                 success: false,
@@ -74,7 +74,6 @@ export class LaTeXOnlineClient {
         options: CompileOptions = {}
     ): Promise<CompileResult> {
         const startTime = Date.now();
-        const engine = options.engine || "pdflatex";
 
         try {
             // Determine target file
@@ -92,6 +91,11 @@ export class LaTeXOnlineClient {
             if (result.success && result.pdfBase64) {
                 const pdfBuffer = Buffer.from(result.pdfBase64, "base64");
                 result.pdfPath = await projectStore.savePdfToCache(projectName, pdfBuffer);
+            }
+
+            // Always cache the log for later analysis
+            if (result.rawLog) {
+                await projectStore.saveLogToCache(projectName, result.rawLog);
             }
 
             return result;
@@ -181,7 +185,7 @@ export class LaTeXOnlineClient {
             }
         }
 
-        // Failure - Log returned
+        // Failure or unexpected content type - parse as log
         const logText = await response.text();
         const parsed = parseLog(logText);
 
@@ -189,6 +193,7 @@ export class LaTeXOnlineClient {
             success: false,
             errors: parsed.errors,
             warnings: parsed.warnings,
+            rawLog: logText,
             duration,
         };
     }
