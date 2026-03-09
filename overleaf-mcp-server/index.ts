@@ -172,7 +172,13 @@ server.resourceTemplate({
 });
 
 // === Ensure directories exist ===
-await projectStore.ensureDirectories();
+try {
+    await projectStore.ensureDirectories();
+    console.log("✓ Directories initialized");
+} catch (error) {
+    console.error("❌ Failed to initialize directories:", error);
+    process.exit(1);
+}
 
 // === Initialize OAuth if enabled ===
 import {
@@ -270,3 +276,14 @@ console.log("   Tools: 19 registered");
 console.log("   Resources: 6 registered");
 console.log("   Prompts: 7 registered");
 console.log(`   OAuth: ${oauthConfig.enabled ? 'ENABLED' : 'disabled'}`);
+
+// === Graceful Shutdown ===
+process.on('SIGINT', () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    process.exit(0);
+});

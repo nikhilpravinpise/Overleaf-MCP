@@ -1,4 +1,4 @@
-import type { CompileResult, CompileEngine, CompileError, CompileWarning } from "./types.js";
+import type { CompileResult, CompileEngine } from "./types.js";
 import { projectStore } from "./LocalProjectStore.js";
 import { parseLog } from "./LogParser.js";
 

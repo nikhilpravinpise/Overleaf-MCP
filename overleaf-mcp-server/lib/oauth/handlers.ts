@@ -263,15 +263,15 @@ export async function handleToken(body: {
     }
 
     if (body.grant_type === 'authorization_code') {
-        return handleAuthorizationCodeGrant(body, client);
+        return handleAuthorizationCodeGrant(body);
     } else if (body.grant_type === 'refresh_token') {
-        return handleRefreshTokenGrant(body, client);
+        return handleRefreshTokenGrant(body);
     } else {
         throw createOAuthError('unsupported_grant_type', `Grant type "${body.grant_type}" is not supported`);
     }
 }
 
-async function handleAuthorizationCodeGrant(body: any, client: any): Promise<TokenResponse> {
+async function handleAuthorizationCodeGrant(body: any): Promise<TokenResponse> {
     if (!body.code || !body.code_verifier || !body.redirect_uri) {
         throw createOAuthError('invalid_request', 'code, code_verifier, and redirect_uri are required');
     }
@@ -343,7 +343,7 @@ async function handleAuthorizationCodeGrant(body: any, client: any): Promise<Tok
     };
 }
 
-async function handleRefreshTokenGrant(body: any, client: any): Promise<TokenResponse> {
+async function handleRefreshTokenGrant(body: any): Promise<TokenResponse> {
     if (!body.refresh_token) {
         throw createOAuthError('invalid_request', 'refresh_token is required');
     }

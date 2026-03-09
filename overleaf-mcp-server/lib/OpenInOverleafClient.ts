@@ -1,4 +1,4 @@
-import type { OverleafUrlOptions, CompileEngine } from "./types.js";
+import type { OverleafUrlOptions } from "./types.js";
 import { projectStore } from "./LocalProjectStore.js";
 
 // ============================================

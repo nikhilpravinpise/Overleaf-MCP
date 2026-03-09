@@ -4,6 +4,18 @@
  */
 
 /**
+ * Validate required OAuth configuration.
+ */
+function validateOAuthConfig() {
+    if (oauthConfig.enabled && !oauthConfig.jwtSecret) {
+        throw new Error('OAUTH_JWT_SECRET is required when OAuth is enabled');
+    }
+    if (oauthConfig.enabled && oauthConfig.jwtSecret === 'dev-secret-change-in-production') {
+        console.warn('⚠️  WARNING: Using default JWT secret in production!');
+    }
+}
+
+/**
  * OAuth configuration loaded from environment.
  */
 export const oauthConfig = {
@@ -38,6 +50,9 @@ export const oauthConfig = {
     /** Data directory for storage */
     dataDir: process.env.OAUTH_DATA_DIR || './data/oauth',
 };
+
+// Validate configuration on import
+validateOAuthConfig();
 
 /**
  * Get OAuth endpoint URLs based on issuer.
