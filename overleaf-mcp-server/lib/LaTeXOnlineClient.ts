@@ -31,32 +31,54 @@ export class LaTeXOnlineClient {
         options: CompileOptions = {}
     ): Promise<CompileResult> {
         const startTime = Date.now();
-        const engine = options.engine || "pdflatex";
-
-        const params = new URLSearchParams({
-            text: content,
-            command: engine,
-        });
-
-        if (options.force) {
-            params.set("force", "true");
-        }
-
+        
         try {
+            // Validate input
+            if (!content || typeof content !== 'string') {
+                throw new Error('Content is required and must be a string');
+            }
+            if (content.trim().length === 0) {
+                throw new Error('Content cannot be empty');
+            }
+            if (content.length > 1024 * 1024) {
+                throw new Error('Content too large (max 1MB)');
+            }
+            
+            // Validate options
+            const engine = options.engine || "pdflatex";
+            if (!["pdflatex", "xelatex", "lualatex"].includes(engine)) {
+                throw new Error(`Invalid engine: ${engine}. Must be pdflatex, xelatex, or lualatex`);
+            }
+            
+            const timeout = options.timeout || this.defaultTimeout;
+            if (timeout <= 0 || timeout > 300000) {
+                throw new Error('Timeout must be between 1ms and 5 minutes');
+            }
+
+            const params = new URLSearchParams({
+                text: content.trim(),
+                command: engine,
+            });
+
+            if (options.force) {
+                params.set("force", "true");
+            }
+
             const response = await this.fetchWithTimeout(
                 `${this.baseUrl}/compile?${params.toString()}`,
                 { method: "GET" },
-                options.timeout || this.defaultTimeout
+                timeout
             );
 
             return await this.handleResponse(response, startTime);
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return {
                 success: false,
                 errors: [
                     {
                         line: 0,
-                        message: error.message || "Compilation failed",
+                        message: errorMessage,
                         type: "other",
                     },
                 ],
@@ -76,8 +98,24 @@ export class LaTeXOnlineClient {
         const startTime = Date.now();
 
         try {
+            // Validate project name
+            if (!projectName || typeof projectName !== 'string' || projectName.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            
+            // Validate root file if provided
+            if (rootFile && (typeof rootFile !== 'string' || rootFile.trim().length === 0)) {
+                throw new Error('Root file must be a non-empty string if provided');
+            }
+            
+            // Validate options
+            const engine = options.engine || "pdflatex";
+            if (!["pdflatex", "xelatex", "lualatex"].includes(engine)) {
+                throw new Error(`Invalid engine: ${engine}. Must be pdflatex, xelatex, or lualatex`);
+            }
+
             // Determine target file
-            const target = rootFile || (await projectStore.findMainFile(projectName)) || "main.tex";
+            const target = rootFile?.trim() || (await projectStore.findMainFile(projectName)) || "main.tex";
 
             // Read the main file content
             const content = await projectStore.readFile(projectName, target);
@@ -99,13 +137,14 @@ export class LaTeXOnlineClient {
             }
 
             return result;
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             const errorResult: CompileResult = {
                 success: false,
                 errors: [
                     {
                         line: 0,
-                        message: error.message || "Compilation failed",
+                        message: errorMessage,
                         type: "other",
                     },
                 ],
@@ -124,32 +163,61 @@ export class LaTeXOnlineClient {
         options: CompileOptions = {}
     ): Promise<CompileResult> {
         const startTime = Date.now();
-        const engine = options.engine || "pdflatex";
-
-        const params = new URLSearchParams({
-            url: texUrl,
-            command: engine,
-        });
-
-        if (options.force) {
-            params.set("force", "true");
-        }
-
+        
         try {
+            // Validate URL
+            if (!texUrl || typeof texUrl !== 'string' || texUrl.trim().length === 0) {
+                throw new Error('URL is required and must be a non-empty string');
+            }
+            
+            // Validate URL format
+            let url: URL;
+            try {
+                url = new URL(texUrl.trim());
+            } catch {
+                throw new Error('Invalid URL format');
+            }
+            
+            // Only allow http/https protocols
+            if (!['http:', 'https:'].includes(url.protocol)) {
+                throw new Error('Only HTTP and HTTPS URLs are allowed');
+            }
+            
+            // Validate options
+            const engine = options.engine || "pdflatex";
+            if (!["pdflatex", "xelatex", "lualatex"].includes(engine)) {
+                throw new Error(`Invalid engine: ${engine}. Must be pdflatex, xelatex, or lualatex`);
+            }
+            
+            const timeout = options.timeout || this.defaultTimeout;
+            if (timeout <= 0 || timeout > 300000) {
+                throw new Error('Timeout must be between 1ms and 5 minutes');
+            }
+
+            const params = new URLSearchParams({
+                url: url.toString(),
+                command: engine,
+            });
+
+            if (options.force) {
+                params.set("force", "true");
+            }
+
             const response = await this.fetchWithTimeout(
                 `${this.baseUrl}/compile?${params.toString()}`,
                 { method: "GET" },
-                options.timeout || this.defaultTimeout
+                timeout
             );
 
             return this.handleResponse(response, startTime);
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return {
                 success: false,
                 errors: [
                     {
                         line: 0,
-                        message: error.message || "Compilation failed",
+                        message: errorMessage,
                         type: "other",
                     },
                 ],
@@ -167,35 +235,67 @@ export class LaTeXOnlineClient {
     ): Promise<CompileResult> {
         const duration = Date.now() - startTime;
 
-        if (response.ok) {
-            // Success - PDF returned
-            const contentType = response.headers.get("content-type");
+        try {
+            if (response.ok) {
+                // Success - PDF returned
+                const contentType = response.headers.get("content-type");
 
-            if (contentType?.includes("application/pdf")) {
-                const pdfBuffer = await response.arrayBuffer();
-                const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
+                if (contentType?.includes("application/pdf")) {
+                    const pdfBuffer = await response.arrayBuffer();
+                    
+                    // Validate PDF size
+                    if (pdfBuffer.byteLength === 0) {
+                        throw new Error('Received empty PDF');
+                    }
+                    
+                    if (pdfBuffer.byteLength > 10 * 1024 * 1024) {
+                        throw new Error('PDF too large (max 10MB)');
+                    }
+                    
+                    const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
 
-                return {
-                    success: true,
-                    pdfBase64,
-                    errors: [],
-                    warnings: [],
-                    duration,
-                };
+                    return {
+                        success: true,
+                        pdfBase64,
+                        errors: [],
+                        warnings: [],
+                        duration,
+                    };
+                }
             }
+
+            // Failure or unexpected content type - parse as log
+            const logText = await response.text();
+            
+            // Validate log size
+            if (logText.length > 1024 * 1024) {
+                throw new Error('Compilation log too large');
+            }
+            
+            const parsed = parseLog(logText);
+
+            return {
+                success: false,
+                errors: parsed.errors,
+                warnings: parsed.warnings,
+                rawLog: logText,
+                duration,
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                success: false,
+                errors: [
+                    {
+                        line: 0,
+                        message: `Response handling failed: ${errorMessage}`,
+                        type: "other",
+                    },
+                ],
+                warnings: [],
+                duration,
+            };
         }
-
-        // Failure or unexpected content type - parse as log
-        const logText = await response.text();
-        const parsed = parseLog(logText);
-
-        return {
-            success: false,
-            errors: parsed.errors,
-            warnings: parsed.warnings,
-            rawLog: logText,
-            duration,
-        };
     }
 
     // === Timeout Helper ===
@@ -205,6 +305,15 @@ export class LaTeXOnlineClient {
         options: RequestInit,
         timeout: number
     ): Promise<Response> {
+        // Validate inputs
+        if (!url || typeof url !== 'string') {
+            throw new Error('URL is required and must be a string');
+        }
+        
+        if (timeout <= 0 || timeout > 300000) {
+            throw new Error('Timeout must be between 1ms and 5 minutes');
+        }
+        
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
 
@@ -212,8 +321,19 @@ export class LaTeXOnlineClient {
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Overleaf-MCP-Server/1.0',
+                    'Accept': 'application/pdf, text/plain, */*',
+                    ...options.headers,
+                },
             });
+            
             return response;
+        } catch (error: unknown) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                throw new Error(`Request timeout after ${timeout}ms`);
+            }
+            throw error;
         } finally {
             clearTimeout(id);
         }
