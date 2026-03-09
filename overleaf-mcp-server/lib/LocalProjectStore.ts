@@ -66,16 +66,28 @@ export class LocalProjectStore {
      */
     private sanitizeProjectName(name: string): string {
         if (!name || typeof name !== 'string') {
-            throw new Error('Project name is required');
+            throw new Error('Project name is required and must be a string');
+        }
+        const trimmed = name.trim();
+        if (trimmed.length === 0) {
+            throw new Error('Project name cannot be empty');
+        }
+        if (trimmed.length > 50) {
+            throw new Error('Project name too long (max 50 characters)');
         }
         // Only allow alphanumeric, hyphens, underscores, dots (no path separators)
-        if (!/^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*$/.test(name)) {
-            throw new Error('Invalid project name. Use only letters, numbers, hyphens, underscores, and dots.');
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*$/.test(trimmed)) {
+            throw new Error('Invalid project name. Use only letters, numbers, hyphens, underscores, and dots. Must start with a letter or number.');
         }
-        if (name === '.' || name === '..') {
+        if (trimmed === '.' || trimmed === '..') {
             throw new Error('Invalid project name');
         }
-        return name;
+        // Prevent reserved names
+        const reserved = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+        if (reserved.includes(trimmed.toUpperCase())) {
+            throw new Error('Project name is reserved');
+        }
+        return trimmed;
     }
 
     /**
@@ -83,9 +95,29 @@ export class LocalProjectStore {
      * @throws {Error} If path escapes the allowed directory
      */
     private safePath(baseParts: string[], relativePath: string): string {
+        if (!relativePath || typeof relativePath !== 'string') {
+            throw new Error('File path is required and must be a string');
+        }
+        const trimmed = relativePath.trim();
+        if (trimmed.length === 0) {
+            throw new Error('File path cannot be empty');
+        }
+        if (trimmed.length > 260) {
+            throw new Error('File path too long (max 260 characters)');
+        }
+        // Prevent null bytes and other dangerous characters
+        if (trimmed.includes('\0') || trimmed.includes('..')) {
+            throw new Error('Invalid characters in file path');
+        }
+        
         const baseDir = path.resolve(...baseParts);
-        const fullPath = path.resolve(baseDir, relativePath);
-        if (!fullPath.startsWith(baseDir + path.sep) && fullPath !== baseDir) {
+        const fullPath = path.resolve(baseDir, trimmed);
+        
+        // Normalize paths for comparison
+        const normalizedBase = path.normalize(baseDir);
+        const normalizedFull = path.normalize(fullPath);
+        
+        if (!normalizedFull.startsWith(normalizedBase + path.sep) && normalizedFull !== normalizedBase) {
             throw new Error('Path traversal detected: path escapes allowed directory');
         }
         return fullPath;
@@ -98,8 +130,13 @@ export class LocalProjectStore {
      * Called automatically by most operations.
      */
     async ensureDirectories(): Promise<void> {
-        await mkdir(this.projectsDir, { recursive: true });
-        await mkdir(this.cacheDir, { recursive: true });
+        try {
+            await mkdir(this.projectsDir, { recursive: true });
+            await mkdir(this.cacheDir, { recursive: true });
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to create directories: ${errorMessage}`);
+        }
     }
 
     // === Project Operations ===
@@ -113,29 +150,40 @@ export class LocalProjectStore {
      * @throws {Error} If project already exists
      */
     async createProject(name: string, template?: string): Promise<Project> {
-        const safeName = this.sanitizeProjectName(name);
-        await this.ensureDirectories();
+        try {
+            const safeName = this.sanitizeProjectName(name);
+            await this.ensureDirectories();
 
-        const projectPath = path.join(this.projectsDir, safeName);
+            const projectPath = path.join(this.projectsDir, safeName);
 
-        // Check if already exists
-        if (await this.exists(projectPath)) {
-            throw new Error(`Project "${safeName}" already exists`);
+            // Check if already exists
+            if (await this.exists(projectPath)) {
+                throw new Error(`Project "${safeName}" already exists`);
+            }
+
+            await mkdir(projectPath, { recursive: true });
+
+            // Validate template content
+            const mainContent = template || this.getDefaultTemplate();
+            if (mainContent.length > 1024 * 1024) {
+                throw new Error('Template content too large (max 1MB)');
+            }
+            
+            await writeFile(path.join(projectPath, "main.tex"), mainContent, "utf-8");
+
+            return this.getProject(safeName);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to create project: ${String(error)}`);
         }
-
-        await mkdir(projectPath, { recursive: true });
-
-        // Create default main.tex
-        const mainContent = template || this.getDefaultTemplate();
-        await writeFile(path.join(projectPath, "main.tex"), mainContent, "utf-8");
-
-        return this.getProject(safeName);
     }
 
     async listProjects(): Promise<Project[]> {
-        await this.ensureDirectories();
-
         try {
+            await this.ensureDirectories();
+
             const entries = await readdir(this.projectsDir, { withFileTypes: true });
             const projects: Project[] = [];
 
@@ -151,105 +199,134 @@ export class LocalProjectStore {
             }
 
             return projects;
-        } catch {
-            return [];
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to list projects: ${errorMessage}`);
         }
     }
 
     async getProject(name: string): Promise<Project> {
-        const safeName = this.sanitizeProjectName(name);
-        const projectPath = path.join(this.projectsDir, safeName);
+        try {
+            const safeName = this.sanitizeProjectName(name);
+            const projectPath = path.join(this.projectsDir, safeName);
 
-        if (!(await this.exists(projectPath))) {
-            throw new Error(`Project "${safeName}" not found`);
+            if (!(await this.exists(projectPath))) {
+                throw new Error(`Project "${safeName}" not found`);
+            }
+
+            const stats = await stat(projectPath);
+            const files = await this.listFiles(name);
+            const mainFile = await this.findMainFile(name);
+
+            return {
+                name: safeName,
+                path: projectPath,
+                createdAt: stats.birthtime,
+                lastModified: stats.mtime,
+                mainFile,
+                fileCount: files.length,
+            };
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to get project: ${String(error)}`);
         }
-
-        const stats = await stat(projectPath);
-        const files = await this.listFiles(name);
-        const mainFile = await this.findMainFile(name);
-
-        return {
-            name,
-            path: projectPath,
-            createdAt: stats.birthtime,
-            lastModified: stats.mtime,
-            mainFile,
-            fileCount: files.length,
-        };
     }
 
     async deleteProject(name: string): Promise<boolean> {
-        const safeName = this.sanitizeProjectName(name);
-        const projectPath = path.join(this.projectsDir, safeName);
+        try {
+            const safeName = this.sanitizeProjectName(name);
+            const projectPath = path.join(this.projectsDir, safeName);
 
-        if (!(await this.exists(projectPath))) {
-            throw new Error(`Project "${safeName}" not found`);
+            if (!(await this.exists(projectPath))) {
+                throw new Error(`Project "${safeName}" not found`);
+            }
+
+            await rm(projectPath, { recursive: true, force: true });
+
+            // Also clean cache
+            const cachePath = path.join(this.cacheDir, safeName);
+            await rm(cachePath, { recursive: true, force: true }).catch(() => { });
+
+            return true;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to delete project: ${String(error)}`);
         }
-
-        await rm(projectPath, { recursive: true, force: true });
-
-        // Also clean cache
-        const cachePath = path.join(this.cacheDir, name);
-        await rm(cachePath, { recursive: true, force: true }).catch(() => { });
-
-        return true;
     }
 
     async getProjectStatus(name: string): Promise<ProjectStatus> {
-        const project = await this.getProject(name);
-        const files = await this.listFiles(name);
-
-        const texFiles = files.filter((f) => f.extension === ".tex").map((f) => f.path);
-        const hasImages = files.some((f) =>
-            [".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"].includes(f.extension)
-        );
-        const hasBibliography = files.some((f) => f.extension === ".bib");
-
-        // Try to load last compile result from cached log
-        let lastCompile: CompileResult | undefined;
         try {
-            const logPath = path.join(this.cacheDir, name, "last.log");
-            await access(logPath, constants.F_OK);
-            const logContent = await readFile(logPath, "utf-8");
-            const parsed = parseLog(logContent);
-            lastCompile = {
-                success: parsed.errors.length === 0,
-                errors: parsed.errors,
-                warnings: parsed.warnings,
-                rawLog: logContent,
-                duration: 0,
-            };
-        } catch {
-            // No cached compile log
-        }
+            const project = await this.getProject(name);
+            const files = await this.listFiles(name);
 
-        return {
-            project,
-            files,
-            texFiles,
-            hasImages,
-            hasBibliography,
-            lastCompile,
-        };
+            const texFiles = files.filter((f) => f.extension === ".tex").map((f) => f.path);
+            const hasImages = files.some((f) =>
+                [".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"].includes(f.extension)
+            );
+            const hasBibliography = files.some((f) => f.extension === ".bib");
+
+            // Try to load last compile result from cached log
+            let lastCompile: CompileResult | undefined;
+            try {
+                const logPath = path.join(this.cacheDir, name, "last.log");
+                await access(logPath, constants.F_OK);
+                const logContent = await readFile(logPath, "utf-8");
+                const parsed = parseLog(logContent);
+                lastCompile = {
+                    success: parsed.errors.length === 0,
+                    errors: parsed.errors,
+                    warnings: parsed.warnings,
+                    rawLog: logContent,
+                    duration: 0,
+                };
+            } catch {
+                // No cached compile log
+            }
+
+            return {
+                project,
+                files,
+                texFiles,
+                hasImages,
+                hasBibliography,
+                lastCompile,
+            };
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to get project status: ${String(error)}`);
+        }
     }
 
     // === File Operations ===
 
     async listFiles(projectName: string, subPath?: string): Promise<ProjectFile[]> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const projectPath = path.join(this.projectsDir, safeName);
-        const targetPath = subPath
-            ? this.safePath([this.projectsDir, safeName], subPath)
-            : projectPath;
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const projectPath = path.join(this.projectsDir, safeName);
+            const targetPath = subPath
+                ? this.safePath([this.projectsDir, safeName], subPath)
+                : projectPath;
 
-        if (!(await this.exists(targetPath))) {
-            throw new Error(`Path not found: ${subPath || safeName}`);
+            if (!(await this.exists(targetPath))) {
+                throw new Error(`Path not found: ${subPath || safeName}`);
+            }
+
+            const files: ProjectFile[] = [];
+            await this.walkDirectory(targetPath, projectPath, files);
+
+            return files;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to list files: ${String(error)}`);
         }
-
-        const files: ProjectFile[] = [];
-        await this.walkDirectory(targetPath, projectPath, files);
-
-        return files;
     }
 
     private async walkDirectory(
@@ -257,151 +334,229 @@ export class LocalProjectStore {
         basePath: string,
         files: ProjectFile[]
     ): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
+        try {
+            const entries = await readdir(currentPath, { withFileTypes: true });
 
-        for (const entry of entries) {
-            const fullPath = path.join(currentPath, entry.name);
-            const relativePath = path.relative(basePath, fullPath).replace(/\\/g, "/");
+            for (const entry of entries) {
+                const fullPath = path.join(currentPath, entry.name);
+                const relativePath = path.relative(basePath, fullPath).replace(/\\/g, "/");
 
-            if (entry.isDirectory()) {
-                files.push({
-                    path: relativePath,
-                    name: entry.name,
-                    extension: "",
-                    size: 0,
-                    isDirectory: true,
-                });
-                await this.walkDirectory(fullPath, basePath, files);
-            } else {
-                const stats = await stat(fullPath);
-                files.push({
-                    path: relativePath,
-                    name: entry.name,
-                    extension: path.extname(entry.name).toLowerCase(),
-                    size: stats.size,
-                    isDirectory: false,
-                });
+                if (entry.isDirectory()) {
+                    files.push({
+                        path: relativePath,
+                        name: entry.name,
+                        extension: "",
+                        size: 0,
+                        isDirectory: true,
+                    });
+                    await this.walkDirectory(fullPath, basePath, files);
+                } else {
+                    const stats = await stat(fullPath);
+                    files.push({
+                        path: relativePath,
+                        name: entry.name,
+                        extension: path.extname(entry.name).toLowerCase(),
+                        size: stats.size,
+                        isDirectory: false,
+                    });
+                }
             }
+        } catch (error: unknown) {
+            // Skip directories that can't be read
+            console.warn(`Warning: Cannot read directory ${currentPath}:`, error instanceof Error ? error.message : error);
         }
     }
 
     async readFile(projectName: string, filePath: string): Promise<string> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const fullPath = this.safePath([this.projectsDir, safeName], filePath);
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const fullPath = this.safePath([this.projectsDir, safeName], filePath);
 
-        if (!(await this.exists(fullPath))) {
-            throw new Error(`File not found: ${filePath}`);
+            if (!(await this.exists(fullPath))) {
+                throw new Error(`File not found: ${filePath}`);
+            }
+
+            const stats = await stat(fullPath);
+            if (stats.size > 2 * 1024 * 1024) {
+                throw new Error(`File exceeds 2MB limit (${Math.round(stats.size / 1024 / 1024)}MB)`);
+            }
+
+            return readFile(fullPath, "utf-8");
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to read file: ${String(error)}`);
         }
-
-        const stats = await stat(fullPath);
-        if (stats.size > 2 * 1024 * 1024) {
-            throw new Error(`File exceeds 2MB limit (${Math.round(stats.size / 1024 / 1024)}MB)`);
-        }
-
-        return readFile(fullPath, "utf-8");
     }
 
     async writeFile(projectName: string, filePath: string, content: string): Promise<boolean> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const projectPath = path.join(this.projectsDir, safeName);
-        const fullPath = this.safePath([this.projectsDir, safeName], filePath);
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const projectPath = path.join(this.projectsDir, safeName);
+            const fullPath = this.safePath([this.projectsDir, safeName], filePath);
 
-        if (!(await this.exists(projectPath))) {
-            throw new Error(`Project "${safeName}" not found`);
+            if (!(await this.exists(projectPath))) {
+                throw new Error(`Project "${safeName}" not found`);
+            }
+
+            // Validate content
+            if (typeof content !== 'string') {
+                throw new Error('Content must be a string');
+            }
+            
+            // Check size
+            if (content.length > 2 * 1024 * 1024) {
+                throw new Error("Content exceeds 2MB limit");
+            }
+
+            // Ensure parent directory exists
+            const parentDir = path.dirname(fullPath);
+            await mkdir(parentDir, { recursive: true });
+
+            await writeFile(fullPath, content, "utf-8");
+            return true;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to write file: ${String(error)}`);
         }
-
-        // Ensure parent directory exists
-        const parentDir = path.dirname(fullPath);
-        await mkdir(parentDir, { recursive: true });
-
-        // Check size
-        if (content.length > 2 * 1024 * 1024) {
-            throw new Error("Content exceeds 2MB limit");
-        }
-
-        await writeFile(fullPath, content, "utf-8");
-        return true;
     }
 
     async deleteFile(projectName: string, filePath: string): Promise<boolean> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const fullPath = this.safePath([this.projectsDir, safeName], filePath);
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const fullPath = this.safePath([this.projectsDir, safeName], filePath);
 
-        if (!(await this.exists(fullPath))) {
-            throw new Error(`File not found: ${filePath}`);
+            if (!(await this.exists(fullPath))) {
+                throw new Error(`File not found: ${filePath}`);
+            }
+
+            await rm(fullPath);
+            return true;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to delete file: ${String(error)}`);
         }
-
-        await rm(fullPath);
-        return true;
     }
 
     // === Archive Operations ===
 
     async createTarball(projectName: string): Promise<Buffer> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const projectPath = path.join(this.projectsDir, safeName);
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const projectPath = path.join(this.projectsDir, safeName);
 
-        if (!(await this.exists(projectPath))) {
-            throw new Error(`Project "${safeName}" not found`);
+            if (!(await this.exists(projectPath))) {
+                throw new Error(`Project "${safeName}" not found`);
+            }
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                const archive = archiver("tar", { gzip: true });
+
+                archive.on("data", (chunk) => chunks.push(chunk));
+                archive.on("end", () => resolve(Buffer.concat(chunks)));
+                archive.on("error", (error) => reject(new Error(`Archive creation failed: ${error.message}`)));
+
+                archive.directory(projectPath, false);
+                archive.finalize();
+            });
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to create tarball: ${String(error)}`);
         }
-
-        return new Promise((resolve, reject) => {
-            const chunks: Buffer[] = [];
-            const archive = archiver("tar", { gzip: true });
-
-            archive.on("data", (chunk) => chunks.push(chunk));
-            archive.on("end", () => resolve(Buffer.concat(chunks)));
-            archive.on("error", reject);
-
-            archive.directory(projectPath, false);
-            archive.finalize();
-        });
     }
 
     async createZip(projectName: string): Promise<Buffer> {
-        const safeName = this.sanitizeProjectName(projectName);
-        const projectPath = path.join(this.projectsDir, safeName);
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const projectPath = path.join(this.projectsDir, safeName);
 
-        if (!(await this.exists(projectPath))) {
-            throw new Error(`Project "${safeName}" not found`);
+            if (!(await this.exists(projectPath))) {
+                throw new Error(`Project "${safeName}" not found`);
+            }
+
+            return new Promise((resolve, reject) => {
+                const chunks: Buffer[] = [];
+                const archive = archiver("zip", { zlib: { level: 9 } });
+
+                archive.on("data", (chunk) => chunks.push(chunk));
+                archive.on("end", () => resolve(Buffer.concat(chunks)));
+                archive.on("error", (error) => reject(new Error(`ZIP creation failed: ${error.message}`)));
+
+                archive.directory(projectPath, false);
+                archive.finalize();
+            });
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to create ZIP: ${String(error)}`);
         }
-
-        return new Promise((resolve, reject) => {
-            const chunks: Buffer[] = [];
-            const archive = archiver("zip", { zlib: { level: 9 } });
-
-            archive.on("data", (chunk) => chunks.push(chunk));
-            archive.on("end", () => resolve(Buffer.concat(chunks)));
-            archive.on("error", reject);
-
-            archive.directory(projectPath, false);
-            archive.finalize();
-        });
     }
 
     // === Cache Operations ===
 
     async savePdfToCache(projectName: string, pdfBuffer: Buffer): Promise<string> {
-        const cacheProjectDir = path.join(this.cacheDir, projectName);
-        await mkdir(cacheProjectDir, { recursive: true });
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const cacheProjectDir = path.join(this.cacheDir, safeName);
+            await mkdir(cacheProjectDir, { recursive: true });
 
-        const pdfPath = path.join(cacheProjectDir, "output.pdf");
-        await writeFile(pdfPath, pdfBuffer);
-        return pdfPath;
+            if (!Buffer.isBuffer(pdfBuffer)) {
+                throw new Error('PDF data must be a Buffer');
+            }
+            
+            if (pdfBuffer.length > 10 * 1024 * 1024) {
+                throw new Error('PDF too large (max 10MB)');
+            }
+
+            const pdfPath = path.join(cacheProjectDir, "output.pdf");
+            await writeFile(pdfPath, pdfBuffer);
+            return pdfPath;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to save PDF to cache: ${String(error)}`);
+        }
     }
 
     async saveLogToCache(projectName: string, log: string): Promise<string> {
-        const cacheProjectDir = path.join(this.cacheDir, projectName);
-        await mkdir(cacheProjectDir, { recursive: true });
+        try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const cacheProjectDir = path.join(this.cacheDir, safeName);
+            await mkdir(cacheProjectDir, { recursive: true });
 
-        const logPath = path.join(cacheProjectDir, "last.log");
-        await writeFile(logPath, log, "utf-8");
-        return logPath;
+            if (typeof log !== 'string') {
+                throw new Error('Log content must be a string');
+            }
+            
+            if (log.length > 1024 * 1024) {
+                throw new Error('Log content too large (max 1MB)');
+            }
+
+            const logPath = path.join(cacheProjectDir, "last.log");
+            await writeFile(logPath, log, "utf-8");
+            return logPath;
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error(`Failed to save log to cache: ${String(error)}`);
+        }
     }
 
     async getCachedPdf(projectName: string): Promise<Buffer | null> {
-        const pdfPath = path.join(this.cacheDir, projectName, "output.pdf");
         try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const pdfPath = path.join(this.cacheDir, safeName, "output.pdf");
             return await readFile(pdfPath);
         } catch {
             return null;
@@ -409,8 +564,9 @@ export class LocalProjectStore {
     }
 
     async getCachedLog(projectName: string): Promise<string | null> {
-        const logPath = path.join(this.cacheDir, projectName, "last.log");
         try {
+            const safeName = this.sanitizeProjectName(projectName);
+            const logPath = path.join(this.cacheDir, safeName, "last.log");
             return await readFile(logPath, "utf-8");
         } catch {
             return null;
