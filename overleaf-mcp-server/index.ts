@@ -48,14 +48,25 @@ server.resource({
     description: "List of all LaTeX projects",
     mimeType: "application/json",
 }, async () => {
-    const projects = await projectStore.listProjects();
-    return {
-        contents: [{
-            uri: "latex://projects",
-            mimeType: "application/json",
-            text: JSON.stringify(projects, null, 2),
-        }],
-    };
+    try {
+        const projects = await projectStore.listProjects();
+        return {
+            contents: [{
+                uri: "latex://projects",
+                mimeType: "application/json",
+                text: JSON.stringify(projects, null, 2),
+            }],
+        };
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return {
+            contents: [{
+                uri: "latex://projects",
+                mimeType: "text/plain",
+                text: `Error fetching projects: ${errorMessage}`,
+            }],
+        };
+    }
 });
 
 server.resource({
@@ -125,7 +136,10 @@ server.resourceTemplate({
     mimeType: "application/json",
 }, async (uri: URL, { name }: Record<string, unknown>) => {
     try {
-        const project = await projectStore.getProject(name as string);
+        if (!name || typeof name !== 'string') {
+            throw new Error('Project name is required and must be a string');
+        }
+        const project = await projectStore.getProject(name);
         return {
             contents: [{
                 uri: uri.href,
@@ -133,9 +147,10 @@ server.resourceTemplate({
                 text: JSON.stringify(project, null, 2),
             }],
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return {
-            contents: [{ uri: uri.href, mimeType: "text/plain", text: `Error: ${error.message}` }],
+            contents: [{ uri: uri.href, mimeType: "text/plain", text: `Error: ${errorMessage}` }],
         };
     }
 });
@@ -147,13 +162,20 @@ server.resourceTemplate({
     mimeType: "text/x-tex",
 }, async (uri: URL, { name, path }: Record<string, unknown>) => {
     try {
-        const content = await projectStore.readFile(name as string, path as string);
+        if (!name || typeof name !== 'string') {
+            throw new Error('Project name is required and must be a string');
+        }
+        if (!path || typeof path !== 'string') {
+            throw new Error('File path is required and must be a string');
+        }
+        const content = await projectStore.readFile(name, path);
         return {
             contents: [{ uri: uri.href, mimeType: "text/x-tex", text: content }],
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return {
-            contents: [{ uri: uri.href, mimeType: "text/plain", text: `Error: ${error.message}` }],
+            contents: [{ uri: uri.href, mimeType: "text/plain", text: `Error: ${errorMessage}` }],
         };
     }
 });
@@ -165,24 +187,38 @@ server.resourceTemplate({
     description: "Last compilation log",
     mimeType: "text/plain",
 }, async (uri: URL, { name }: Record<string, unknown>) => {
-    const log = await projectStore.getCachedLog(name as string);
-    return {
-        contents: [{ uri: uri.href, mimeType: "text/plain", text: log || "No compilation log available." }],
-    };
+    try {
+        if (!name || typeof name !== 'string') {
+            throw new Error('Project name is required and must be a string');
+        }
+        const log = await projectStore.getCachedLog(name);
+        return {
+            contents: [{ uri: uri.href, mimeType: "text/plain", text: log || "No compilation log available." }],
+        };
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return {
+            contents: [{ uri: uri.href, mimeType: "text/plain", text: `Error fetching log: ${errorMessage}` }],
+        };
+    }
 });
 
 // === Ensure directories exist ===
 try {
     await projectStore.ensureDirectories();
     console.log("✓ Directories initialized");
-} catch (error) {
-    console.error("❌ Failed to initialize directories:", error);
+} catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("❌ Failed to initialize directories:", errorMessage);
+    if (error instanceof Error && error.stack) {
+        console.error("Stack trace:", error.stack);
+    }
     process.exit(1);
 }
 
 // === Initialize OAuth if enabled ===
+import { oauthConfig } from "./lib/oauth/config.js";
 import {
-    oauthConfig,
     initializeStore,
     handleMetadata,
     handleClientRegistration,
@@ -193,11 +229,20 @@ import {
 } from "./lib/oauth/index.js";
 
 if (oauthConfig.enabled) {
-    await initializeStore();
-    // Start lazy cleanup timers for OAuth store
-    const { startCleanupTimer } = await import('./lib/oauth/store.js');
-    startCleanupTimer();
-    console.log("🔐 OAuth 2.1 enabled");
+    try {
+        await initializeStore();
+        // Start lazy cleanup timers for OAuth store
+        const { startCleanupTimer } = await import('./lib/oauth/store.js');
+        startCleanupTimer();
+        console.log("🔐 OAuth 2.1 enabled");
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error("❌ Failed to initialize OAuth:", errorMessage);
+        if (error instanceof Error && error.stack) {
+            console.error("Stack trace:", error.stack);
+        }
+        process.exit(1);
+    }
 }
 
 // Start rate limit cleanup timer
@@ -209,6 +254,21 @@ startRateLimitCleanup();
 if (oauthConfig.enabled && (server as any).app) {
     const app = (server as any).app;
 
+    // Add security middleware for OAuth endpoints
+    app.use('/.well-known/oauth-authorization-server', (_req: any, res: any, next: any) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        next();
+    });
+
+    app.use('/register', (_req: any, res: any, next: any) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        next();
+    });
+
     // RFC 8414 - Authorization Server Metadata Discovery
     app.get('/.well-known/oauth-authorization-server', (_req: any, res: any) => {
         res.json(handleMetadata());
@@ -219,8 +279,13 @@ if (oauthConfig.enabled && (server as any).app) {
         try {
             const result = await handleClientRegistration(req.body);
             res.status(201).json(result);
-        } catch (err: any) {
-            res.status(400).json({ error: err.error || 'invalid_request', error_description: err.error_description || err.message });
+        } catch (err: unknown) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            const statusCode = error.message.includes('invalid_client') ? 400 : 400;
+            res.status(statusCode).json({ 
+                error: 'invalid_request', 
+                error_description: error.message 
+            });
         }
     });
 
@@ -238,8 +303,12 @@ if (oauthConfig.enabled && (server as any).app) {
             } else {
                 res.type('html').send(result.html);
             }
-        } catch (err: any) {
-            res.status(500).json({ error: 'server_error', error_description: err.message });
+        } catch (err: unknown) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            res.status(500).json({ 
+                error: 'server_error', 
+                error_description: error.message 
+            });
         }
     });
 
@@ -248,9 +317,13 @@ if (oauthConfig.enabled && (server as any).app) {
         try {
             const result = await handleToken(req.body);
             res.json(result);
-        } catch (err: any) {
-            const status = err.error === 'invalid_client' ? 401 : 400;
-            res.status(status).json({ error: err.error || 'invalid_request', error_description: err.error_description || err.message });
+        } catch (err: unknown) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            const status = error.message.includes('invalid_client') ? 401 : 400;
+            res.status(status).json({ 
+                error: error.message.includes('invalid_client') ? 'invalid_client' : 'invalid_request', 
+                error_description: error.message 
+            });
         }
     });
 
@@ -259,8 +332,9 @@ if (oauthConfig.enabled && (server as any).app) {
         try {
             await handleRevoke(req.body);
             res.status(200).end();
-        } catch (err: any) {
+        } catch (err: unknown) {
             // RFC 7009 says revocation always returns 200
+            console.error('Token revocation error:', err instanceof Error ? err.message : err);
             res.status(200).end();
         }
     });
@@ -269,21 +343,43 @@ if (oauthConfig.enabled && (server as any).app) {
 }
 
 // === Start Server ===
-server.listen();
-
-console.log("🚀 Overleaf MCP Server started");
-console.log("   Tools: 19 registered");
-console.log("   Resources: 6 registered");
-console.log("   Prompts: 7 registered");
-console.log(`   OAuth: ${oauthConfig.enabled ? 'ENABLED' : 'disabled'}`);
+try {
+    server.listen();
+    console.log("🚀 Overleaf MCP Server started");
+    console.log("   Tools: 19 registered");
+    console.log("   Resources: 6 registered");
+    console.log("   Prompts: 7 registered");
+    console.log(`   OAuth: ${oauthConfig.enabled ? 'ENABLED' : 'disabled'}`);
+    console.log(`   Port: ${process.env.PORT || 3000}`);
+    console.log(`   Base URL: ${process.env.BASE_URL || 'http://localhost:3000'}`);
+} catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("❌ Failed to start server:", errorMessage);
+    if (error instanceof Error && error.stack) {
+        console.error("Stack trace:", error.stack);
+    }
+    process.exit(1);
+}
 
 // === Graceful Shutdown ===
-process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down gracefully...');
+const gracefulShutdown = (signal: string) => {
+    console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+    // Add cleanup logic here if needed
     process.exit(0);
+};
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error: Error) => {
+    console.error('❌ Uncaught Exception:', error.message);
+    console.error('Stack trace:', error.stack);
+    process.exit(1);
 });
 
-process.on('SIGTERM', () => {
-    console.log('\n🛑 Shutting down gracefully...');
-    process.exit(0);
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
 });

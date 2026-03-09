@@ -44,10 +44,20 @@ export function registerTools(server: MCPServer) {
             template: z.string().optional().describe("Initial template content"),
         }),
     }, async ({ project, template }) => {
-        const created = await projectStore.createProject(project, template);
-        return {
-            content: [{ type: "text", text: `Created project "${created.name}" at ${created.path}` }],
-        };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const created = await projectStore.createProject(project.trim(), template);
+            return {
+                content: [{ type: "text", text: `✅ Created project "${created.name}" at ${created.path}` }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to create project: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -56,15 +66,22 @@ export function registerTools(server: MCPServer) {
         schema: z.object({}),
         annotations: { readOnlyHint: true },
     }, async () => {
-        const projects = await projectStore.listProjects();
-        return {
-            content: [{
-                type: "text",
-                text: projects.length > 0
-                    ? projects.map((p) => `• ${p.name} (${p.fileCount} files, main: ${p.mainFile || "unknown"})`).join("\n")
-                    : "No projects found. Create one with latex_create_project.",
-            }],
-        };
+        try {
+            const projects = await projectStore.listProjects();
+            return {
+                content: [{
+                    type: "text",
+                    text: projects.length > 0
+                        ? projects.map((p) => `• ${p.name} (${p.fileCount} files, main: ${p.mainFile || "unknown"})`).join("\n")
+                        : "No projects found. Create one with latex_create_project.",
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to list projects: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -75,8 +92,18 @@ export function registerTools(server: MCPServer) {
         }),
         annotations: { destructiveHint: true },
     }, async ({ project }) => {
-        await projectStore.deleteProject(project);
-        return { content: [{ type: "text", text: `Deleted project "${project}"` }] };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            await projectStore.deleteProject(project.trim());
+            return { content: [{ type: "text", text: `✅ Deleted project "${project}"` }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to delete project: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -87,18 +114,23 @@ export function registerTools(server: MCPServer) {
         }),
         annotations: { readOnlyHint: true },
     }, async ({ project }) => {
-        const status = await projectStore.getProjectStatus(project);
-        return {
-            content: [{
-                type: "text",
-                text: `Project: ${status.project.name}
-Files: ${status.files.length} total (${status.texFiles.length} .tex)
-Main file: ${status.project.mainFile || "not detected"}
-Has images: ${status.hasImages ? "Yes" : "No"}
-Has bibliography: ${status.hasBibliography ? "Yes" : "No"}
-Last modified: ${status.project.lastModified.toISOString()}`,
-            }],
-        };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const status = await projectStore.getProjectStatus(project.trim());
+            return {
+                content: [{
+                    type: "text",
+                    text: `📊 Project: ${status.project.name}\n📁 Files: ${status.files.length} total (${status.texFiles.length} .tex)\n🎯 Main file: ${status.project.mainFile || "not detected"}\n🖼️  Has images: ${status.hasImages ? "Yes" : "No"}\n📚 Has bibliography: ${status.hasBibliography ? "Yes" : "No"}\n🕒 Last modified: ${status.project.lastModified.toISOString()}`,
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to get project status: ${errorMessage}` }],
+            };
+        }
     });
 
     // === File Operations ===
@@ -112,13 +144,23 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         }),
         annotations: { readOnlyHint: true },
     }, async ({ project, path }) => {
-        const files = await projectStore.listFiles(project, path);
-        return {
-            content: [{
-                type: "text",
-                text: files.map((f) => f.isDirectory ? `📁 ${f.path}/` : `📄 ${f.path} (${Math.round(f.size / 1024)}KB)`).join("\n"),
-            }],
-        };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const files = await projectStore.listFiles(project.trim(), path);
+            return {
+                content: [{
+                    type: "text",
+                    text: files.map((f) => f.isDirectory ? `📁 ${f.path}/` : `📄 ${f.path} (${Math.round(f.size / 1024)}KB)`).join("\n"),
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to list files: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -130,8 +172,21 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         }),
         annotations: { readOnlyHint: true },
     }, async ({ project, path }) => {
-        const content = await projectStore.readFile(project, path);
-        return { content: [{ type: "text", text: content }] };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            if (!path || typeof path !== 'string' || path.trim().length === 0) {
+                throw new Error('File path is required and must be a non-empty string');
+            }
+            const content = await projectStore.readFile(project.trim(), path.trim());
+            return { content: [{ type: "text", text: content }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to read file: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -143,8 +198,24 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             content: z.string().describe("File content"),
         }),
     }, async ({ project, path, content }) => {
-        await projectStore.writeFile(project, path, content);
-        return { content: [{ type: "text", text: `Written ${content.length} bytes to ${path}` }] };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            if (!path || typeof path !== 'string' || path.trim().length === 0) {
+                throw new Error('File path is required and must be a non-empty string');
+            }
+            if (content === undefined || content === null) {
+                throw new Error('File content is required');
+            }
+            await projectStore.writeFile(project.trim(), path.trim(), content);
+            return { content: [{ type: "text", text: `✅ Written ${content.length} bytes to ${path}` }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to write file: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -156,8 +227,21 @@ Last modified: ${status.project.lastModified.toISOString()}`,
         }),
         annotations: { destructiveHint: true },
     }, async ({ project, path }) => {
-        await projectStore.deleteFile(project, path);
-        return { content: [{ type: "text", text: `Deleted ${path}` }] };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            if (!path || typeof path !== 'string' || path.trim().length === 0) {
+                throw new Error('File path is required and must be a non-empty string');
+            }
+            await projectStore.deleteFile(project.trim(), path.trim());
+            return { content: [{ type: "text", text: `✅ Deleted ${path}` }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to delete file: ${errorMessage}` }],
+            };
+        }
     });
 
     // === Compilation ===
@@ -171,15 +255,25 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             rootFile: z.string().optional().describe("Main file to compile"),
         }),
     }, async ({ project, engine, rootFile }) => {
-        const result = await latexOnline.compileProject(project, rootFile, { engine });
-        if (result.success) {
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const result = await latexOnline.compileProject(project.trim(), rootFile, { engine });
+            if (result.success) {
+                return {
+                    content: [{ type: "text", text: `✅ Compilation successful (${result.duration}ms)\n📄 PDF saved to: ${result.pdfPath}` }],
+                };
+            } else {
+                const errorText = result.errors.map((e) => `Line ${e.line}: ${e.message}`).join("\n");
+                return {
+                    content: [{ type: "text", text: `❌ Compilation failed (${result.duration}ms)\n\n🚨 Errors:\n${errorText || "Unknown error"}` }],
+                };
+            }
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return {
-                content: [{ type: "text", text: `✅ Compilation successful (${result.duration}ms)\nPDF saved to: ${result.pdfPath}` }],
-            };
-        } else {
-            const errorText = result.errors.map((e) => `Line ${e.line}: ${e.message}`).join("\n");
-            return {
-                content: [{ type: "text", text: `❌ Compilation failed (${result.duration}ms)\n\nErrors:\n${errorText || "Unknown error"}` }],
+                content: [{ type: "text", text: `❌ Compilation error: ${errorMessage}` }],
             };
         }
     });
@@ -191,19 +285,29 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             project: z.string().describe("Project name"),
         }),
     }, async ({ project }) => {
-        const log = await projectStore.getCachedLog(project);
-        if (!log) {
-            return { content: [{ type: "text", text: "No compilation log found. Run latex_compile first." }] };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const log = await projectStore.getCachedLog(project.trim());
+            if (!log) {
+                return { content: [{ type: "text", text: "ℹ️ No compilation log found. Run latex_compile first." }] };
+            }
+            const parsed = parseLog(log);
+            let output = `📋 ${parsed.summary}\n\n`;
+            if (parsed.errors.length > 0) {
+                output += "🚨 ERRORS:\n" + parsed.errors.map((e) => `  Line ${e.line}: ${e.message}`).join("\n") + "\n\n";
+            }
+            if (parsed.warnings.length > 0) {
+                output += "⚠️ WARNINGS:\n" + parsed.warnings.map((w) => `  ${w.line ? `Line ${w.line}: ` : ""}${w.message}`).join("\n");
+            }
+            return { content: [{ type: "text", text: output }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to analyze log: ${errorMessage}` }],
+            };
         }
-        const parsed = parseLog(log);
-        let output = parsed.summary + "\n\n";
-        if (parsed.errors.length > 0) {
-            output += "ERRORS:\n" + parsed.errors.map((e) => `  Line ${e.line}: ${e.message}`).join("\n") + "\n\n";
-        }
-        if (parsed.warnings.length > 0) {
-            output += "WARNINGS:\n" + parsed.warnings.map((w) => `  ${w.line ? `Line ${w.line}: ` : ""}${w.message}`).join("\n");
-        }
-        return { content: [{ type: "text", text: output }] };
     });
 
     // === Open in Overleaf ===
@@ -218,10 +322,20 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             visualEditor: z.boolean().optional(),
         }),
     }, async ({ project, engine, mainDocument, visualEditor }) => {
-        const url = await openInOverleaf.generateFromProject(project, { engine, mainDocument, visualEditor });
-        return {
-            content: [{ type: "text", text: `🚀 Open in Overleaf:\n${url}\n\nNote: This creates a NEW project in Overleaf from your local files.` }],
-        };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const url = await openInOverleaf.generateFromProject(project.trim(), { engine, mainDocument, visualEditor });
+            return {
+                content: [{ type: "text", text: `🚀 Open in Overleaf:\n${url}\n\nℹ️ Note: This creates a NEW project in Overleaf from your local files.` }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to generate Overleaf URL: ${errorMessage}` }],
+            };
+        }
     });
 
     server.tool({
@@ -231,11 +345,21 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             project: z.string().describe("Project name"),
         }),
     }, async ({ project }) => {
-        const zipBuffer = await projectStore.createZip(project);
-        const base64 = zipBuffer.toString("base64");
-        return {
-            content: [{ type: "text", text: `ZIP created (${Math.round(zipBuffer.length / 1024)}KB)\n\nBase64 (first 100 chars): ${base64.substring(0, 100)}...` }],
-        };
+        try {
+            if (!project || typeof project !== 'string' || project.trim().length === 0) {
+                throw new Error('Project name is required and must be a non-empty string');
+            }
+            const zipBuffer = await projectStore.createZip(project.trim());
+            const base64 = zipBuffer.toString("base64");
+            return {
+                content: [{ type: "text", text: `📦 ZIP created (${Math.round(zipBuffer.length / 1024)}KB)\n\n🔐 Base64 (first 100 chars): ${base64.substring(0, 100)}...` }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to create ZIP: ${errorMessage}` }],
+            };
+        }
     });
 
     // === Validation & Utilities ===
@@ -247,11 +371,21 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             content: z.string().describe("LaTeX content to validate"),
         }),
     }, async ({ content }) => {
-        const result = quickValidate(content);
-        if (result.valid) {
-            return { content: [{ type: "text", text: "✅ No obvious issues found." }] };
-        } else {
-            return { content: [{ type: "text", text: `⚠️ Issues found:\n${result.issues.map((i) => `• ${i}`).join("\n")}` }] };
+        try {
+            if (!content || typeof content !== 'string') {
+                throw new Error('Content is required and must be a string');
+            }
+            const result = quickValidate(content);
+            if (result.valid) {
+                return { content: [{ type: "text", text: "✅ No obvious issues found." }] };
+            } else {
+                return { content: [{ type: "text", text: `⚠️ Issues found:\n${result.issues.map((i) => `• ${i}`).join("\n")}` }] };
+            }
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Validation error: ${errorMessage}` }],
+            };
         }
     });
 
@@ -262,12 +396,22 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             query: z.string().describe("Search query"),
         }),
     }, async ({ query }) => {
-        const result = await ctanClient.searchPackages(query);
-        if (result.packages.length === 0) {
-            return { content: [{ type: "text", text: `No packages found for "${query}"` }] };
+        try {
+            if (!query || typeof query !== 'string' || query.trim().length === 0) {
+                throw new Error('Search query is required and must be a non-empty string');
+            }
+            const result = await ctanClient.searchPackages(query.trim());
+            if (result.packages.length === 0) {
+                return { content: [{ type: "text", text: `❌ No packages found for "${query}"` }] };
+            }
+            const list = result.packages.map((p) => `• ${p.name}: ${p.caption}`).join("\n");
+            return { content: [{ type: "text", text: `🔍 Found ${result.total} packages for "${query}":\n\n${list}` }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Package search error: ${errorMessage}` }],
+            };
         }
-        const list = result.packages.map((p) => `• ${p.name}: ${p.caption}`).join("\n");
-        return { content: [{ type: "text", text: `Found ${result.total} packages for "${query}":\n\n${list}` }] };
     });
 
     server.tool({
@@ -277,16 +421,26 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             packageName: z.string().describe("Package name"),
         }),
     }, async ({ packageName }) => {
-        const pkg = await ctanClient.getPackageInfo(packageName);
-        if (!pkg) {
-            return { content: [{ type: "text", text: `Package "${packageName}" not found on CTAN.` }] };
+        try {
+            if (!packageName || typeof packageName !== 'string' || packageName.trim().length === 0) {
+                throw new Error('Package name is required and must be a non-empty string');
+            }
+            const pkg = await ctanClient.getPackageInfo(packageName.trim());
+            if (!pkg) {
+                return { content: [{ type: "text", text: `❌ Package "${packageName}" not found on CTAN.` }] };
+            }
+            return {
+                content: [{
+                    type: "text",
+                    text: `📦 Package: ${pkg.name}\n📝 Caption: ${pkg.caption}\n🏷️ Version: ${pkg.version || "unknown"}\n⚖️ License: ${pkg.license || "unknown"}\n\n📄 Description:\n${pkg.description || "No description available."}\n\n📚 Documentation: ${pkg.documentationUrl || "Not available"}`,
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Failed to get package info: ${errorMessage}` }],
+            };
         }
-        return {
-            content: [{
-                type: "text",
-                text: `Package: ${pkg.name}\nCaption: ${pkg.caption}\nVersion: ${pkg.version || "unknown"}\nLicense: ${pkg.license || "unknown"}\n\nDescription:\n${pkg.description || "No description available."}\n\nDocumentation: ${pkg.documentationUrl || "Not available"}`,
-            }],
-        };
     });
 
     server.tool({
@@ -296,24 +450,34 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             description: z.string().describe("Description of the symbol"),
         }),
     }, async ({ description }) => {
-        const symbols: Record<string, string> = {
-            alpha: "\\alpha", beta: "\\beta", gamma: "\\gamma", delta: "\\delta",
-            infinity: "\\infty", sum: "\\sum", integral: "\\int",
-            "partial derivative": "\\partial", "square root": "\\sqrt{}",
-            fraction: "\\frac{}{}", "not equal": "\\neq",
-            "less than or equal": "\\leq", "greater than or equal": "\\geq",
-            arrow: "\\rightarrow", "double arrow": "\\Rightarrow", "left arrow": "\\leftarrow",
-            times: "\\times", divide: "\\div", plusminus: "\\pm",
-            degree: "^\\circ", copyright: "\\copyright", trademark: "\\texttrademark",
-        };
-        const searchLower = description.toLowerCase();
-        const matches = Object.entries(symbols)
-            .filter(([key]) => key.includes(searchLower) || searchLower.includes(key))
-            .map(([name, code]) => `${name}: ${code}`);
-        if (matches.length === 0) {
-            return { content: [{ type: "text", text: `No symbol found for "${description}". Try: alpha, beta, sum, integral, arrow, etc.` }] };
+        try {
+            if (!description || typeof description !== 'string' || description.trim().length === 0) {
+                throw new Error('Symbol description is required and must be a non-empty string');
+            }
+            const symbols: Record<string, string> = {
+                alpha: "\\alpha", beta: "\\beta", gamma: "\\gamma", delta: "\\delta",
+                infinity: "\\infty", sum: "\\sum", integral: "\\int",
+                "partial derivative": "\\partial", "square root": "\\sqrt{}",
+                fraction: "\\frac{}{}", "not equal": "\\neq",
+                "less than or equal": "\\leq", "greater than or equal": "\\geq",
+                arrow: "\\rightarrow", "double arrow": "\\Rightarrow", "left arrow": "\\leftarrow",
+                times: "\\times", divide: "\\div", plusminus: "\\pm",
+                degree: "^\\circ", copyright: "\\copyright", trademark: "\\texttrademark",
+            };
+            const searchLower = description.toLowerCase().trim();
+            const matches = Object.entries(symbols)
+                .filter(([key]) => key.includes(searchLower) || searchLower.includes(key))
+                .map(([name, code]) => `${name}: ${code}`);
+            if (matches.length === 0) {
+                return { content: [{ type: "text", text: `❌ No symbol found for "${description}". Try: alpha, beta, sum, integral, arrow, etc.` }] };
+            }
+            return { content: [{ type: "text", text: `🔣 Symbols matching "${description}":\n\n${matches.join("\n")}` }] };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Symbol search error: ${errorMessage}` }],
+            };
         }
-        return { content: [{ type: "text", text: `Symbols matching "${description}":\n\n${matches.join("\n")}` }] };
     });
 
     // ======================================
@@ -334,23 +498,33 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             readOnlyHint: true,
         },
     }, async ({ query }) => {
-        const results = await projectStore.searchContent(query);
+        try {
+            if (!query || typeof query !== 'string' || query.trim().length === 0) {
+                throw new Error('Search query is required and must be a non-empty string');
+            }
+            const results = await projectStore.searchContent(query.trim());
 
-        // Format results per OpenAI spec
-        const formattedResults = results.map(r => ({
-            id: `${r.project}:${r.filePath}`,
-            title: `${r.fileName} (${r.project})`,
-            url: `latex://${r.project}/${r.filePath}`,
-            text: r.snippet,
-        }));
+            // Format results per OpenAI spec
+            const formattedResults = results.map(r => ({
+                id: `${r.project}:${r.filePath}`,
+                title: `${r.fileName} (${r.project})`,
+                url: `latex://${r.project}/${r.filePath}`,
+                text: r.snippet,
+            }));
 
-        // Return in OpenAI's required format: JSON-encoded string in text content
-        return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({ results: formattedResults }),
-            }],
-        };
+            // Return in OpenAI's required format: JSON-encoded string in text content
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify({ results: formattedResults }),
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Search error: ${errorMessage}` }],
+            };
+        }
     });
 
     /**
@@ -367,44 +541,58 @@ Last modified: ${status.project.lastModified.toISOString()}`,
             readOnlyHint: true,
         },
     }, async ({ id }) => {
-        // Parse ID format: projectName:filePath
-        const colonIndex = id.indexOf(":");
-        if (colonIndex === -1) {
-            throw new Error(`Invalid ID format. Expected 'projectName:filePath', got: ${id}`);
+        try {
+            if (!id || typeof id !== 'string' || id.trim().length === 0) {
+                throw new Error('Document ID is required and must be a non-empty string');
+            }
+            // Parse ID format: projectName:filePath
+            const colonIndex = id.indexOf(":");
+            if (colonIndex === -1) {
+                throw new Error(`Invalid ID format. Expected 'projectName:filePath', got: ${id}`);
+            }
+
+            const projectName = id.substring(0, colonIndex).trim();
+            const filePath = id.substring(colonIndex + 1).trim();
+
+            if (projectName.length === 0 || filePath.length === 0) {
+                throw new Error('Both project name and file path must be non-empty');
+            }
+
+            // Read file content
+            const content = await projectStore.readFile(projectName, filePath);
+            const fileName = filePath.split("/").pop() || filePath;
+
+            // Get project info for metadata
+            const project = await projectStore.getProject(projectName);
+
+            // Format result per OpenAI spec
+            const result = {
+                id,
+                title: `${fileName} (${projectName})`,
+                text: content,
+                url: `latex://${projectName}/${filePath}`,
+                metadata: {
+                    project: projectName,
+                    filePath,
+                    fileCount: project.fileCount,
+                    mainFile: project.mainFile,
+                    lastModified: project.lastModified.toISOString(),
+                },
+            };
+
+            // Return in OpenAI's required format: JSON-encoded string in text content
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify(result),
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                content: [{ type: "text", text: `❌ Fetch error: ${errorMessage}` }],
+            };
         }
-
-        const projectName = id.substring(0, colonIndex);
-        const filePath = id.substring(colonIndex + 1);
-
-        // Read file content
-        const content = await projectStore.readFile(projectName, filePath);
-        const fileName = filePath.split("/").pop() || filePath;
-
-        // Get project info for metadata
-        const project = await projectStore.getProject(projectName);
-
-        // Format result per OpenAI spec
-        const result = {
-            id,
-            title: `${fileName} (${projectName})`,
-            text: content,
-            url: `latex://${projectName}/${filePath}`,
-            metadata: {
-                project: projectName,
-                filePath,
-                fileCount: project.fileCount,
-                mainFile: project.mainFile,
-                lastModified: project.lastModified.toISOString(),
-            },
-        };
-
-        // Return in OpenAI's required format: JSON-encoded string in text content
-        return {
-            content: [{
-                type: "text",
-                text: JSON.stringify(result),
-            }],
-        };
     });
 }
 
