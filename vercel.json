@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "overleaf-mcp-server/package.json",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": "overleaf-mcp-server/dist/**"
+      }
     }
   ],
   "routes": [
