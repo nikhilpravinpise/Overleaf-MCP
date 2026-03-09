@@ -40,13 +40,31 @@ export class CTANClient {
     // === Search Packages ===
 
     async searchPackages(query: string, limit = 20): Promise<CTANSearchResult> {
-        const cacheKey = `search:${query}:${limit}`;
+        // Input validation
+        if (typeof query !== 'string') {
+            throw new Error('Search query must be a string');
+        }
+        
+        if (query.trim().length === 0) {
+            throw new Error('Search query cannot be empty');
+        }
+        
+        if (query.length > 200) {
+            throw new Error('Search query too long (max 200 characters)');
+        }
+        
+        if (typeof limit !== 'number' || limit < 1 || limit > 100) {
+            throw new Error('Limit must be between 1 and 100');
+        }
+        
+        const trimmedQuery = query.trim();
+        const cacheKey = `search:${trimmedQuery}:${limit}`;
         const cached = this.getFromCache<CTANSearchResult>(cacheKey);
         if (cached) return cached;
 
         try {
             const response = await fetch(
-                `${this.baseUrl}/search/pkg?phrase=${encodeURIComponent(query)}`
+                `${this.baseUrl}/search/pkg?phrase=${encodeURIComponent(trimmedQuery)}`
             );
 
             if (!response.ok) {

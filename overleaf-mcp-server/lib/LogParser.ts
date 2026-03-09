@@ -8,6 +8,25 @@ import type { CompileError, CompileWarning, ParsedLog, ValidationResult } from "
  * Parse LaTeX compilation log into structured errors and warnings
  */
 export function parseLog(rawLog: string): ParsedLog {
+    // Input validation
+    if (typeof rawLog !== 'string') {
+        throw new Error('Log content must be a string');
+    }
+    
+    if (rawLog.length === 0) {
+        return {
+            errors: [],
+            warnings: [],
+            rawLog: '',
+            summary: 'Empty log',
+        };
+    }
+    
+    // Prevent extremely large logs
+    if (rawLog.length > 10 * 1024 * 1024) {
+        throw new Error('Log content too large (max 10MB)');
+    }
+    
     const errors: CompileError[] = [];
     const warnings: CompileWarning[] = [];
 

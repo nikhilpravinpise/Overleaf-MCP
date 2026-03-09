@@ -18,13 +18,39 @@ export class OpenInOverleafClient {
 
     /**
      * Generate URL for a single LaTeX content string
-     * Uses encoded_snip for reliable handling
+     * Uses encoded_snip for reliable handling of special characters
      */
     generateFromContent(content: string, options: OverleafUrlOptions = {}): string {
+        // Input validation
+        if (typeof content !== 'string') {
+            throw new Error('Content must be a string');
+        }
+        
+        if (content.trim().length === 0) {
+            throw new Error('Content cannot be empty');
+        }
+        
+        if (content.length > 1024 * 1024) {
+            throw new Error('Content too large (max 1MB)');
+        }
+        
+        // Validate options
+        if (options && typeof options !== 'object') {
+            throw new Error('Options must be an object');
+        }
+        
+        if (options.engine && !['pdflatex', 'xelatex', 'lualatex'].includes(options.engine)) {
+            throw new Error('Invalid engine. Must be pdflatex, xelatex, or lualatex');
+        }
+        
+        if (options.mainDocument && typeof options.mainDocument !== 'string') {
+            throw new Error('Main document must be a string');
+        }
+        
         const params = new URLSearchParams();
 
         // Use encoded_snip for reliable handling of special characters
-        params.set("encoded_snip", encodeURIComponent(content));
+        params.set("encoded_snip", encodeURIComponent(content.trim()));
 
         this.addOptions(params, options);
 
