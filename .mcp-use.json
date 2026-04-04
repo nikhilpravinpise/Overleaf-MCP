@@ -2,17 +2,9 @@
   "name": "Overleaf-MCP",
   "version": "1.0.0",
   "description": "LaTeX project management MCP server with ChatGPT App widgets",
-  "build": {
-    "command": "npm run build",
-    "cwd": "overleaf-mcp-server",
-    "output": "dist"
-  },
-  "start": {
-    "command": "npm start",
-    "cwd": "overleaf-mcp-server",
-    "port": 3000
-  },
+  "dockerfile": "Dockerfile",
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "PORT": "3000"
   }
 }
