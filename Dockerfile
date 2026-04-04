@@ -9,9 +9,9 @@ COPY package*.json ./
 # Copy server directory with its package files
 COPY overleaf-mcp-server ./overleaf-mcp-server
 
-# Install dependencies in the server directory
+# Install dependencies in the server directory (including dev deps for build)
 WORKDIR /app/overleaf-mcp-server
-RUN npm ci --only=production
+RUN npm ci
 
 # Build the application
 RUN npm run build
