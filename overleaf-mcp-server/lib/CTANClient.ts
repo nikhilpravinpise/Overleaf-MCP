@@ -63,7 +63,7 @@ export class CTANClient {
         if (cached) return cached;
 
         try {
-            const response = await fetch(
+            const response = await this.fetchWithTimeout(
                 `${this.baseUrl}/search/pkg?phrase=${encodeURIComponent(trimmedQuery)}`
             );
 
@@ -87,10 +87,8 @@ export class CTANClient {
             this.setCache(cacheKey, result);
             return result;
         } catch (error: any) {
-            return {
-                packages: [],
-                total: 0,
-            };
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`CTAN search failed: ${message}`);
         }
     }
 
@@ -102,7 +100,7 @@ export class CTANClient {
         if (cached) return cached;
 
         try {
-            const response = await fetch(`${this.baseUrl}/pkg/${encodeURIComponent(name)}`);
+            const response = await this.fetchWithTimeout(`${this.baseUrl}/pkg/${encodeURIComponent(name)}`);
 
             if (!response.ok) {
                 if (response.status === 404) {
@@ -125,7 +123,8 @@ export class CTANClient {
             this.setCache(cacheKey, pkg);
             return pkg;
         } catch (error: any) {
-            return null;
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`CTAN package lookup failed: ${message}`);
         }
     }
 
@@ -201,6 +200,22 @@ export class CTANClient {
 
     clearCache(): void {
         this.cache.clear();
+    }
+
+    private async fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            return response;
+        } catch (error: unknown) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                throw new Error(`Request timed out after ${timeoutMs}ms`);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timer);
+        }
     }
 }
 

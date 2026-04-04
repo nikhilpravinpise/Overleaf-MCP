@@ -156,12 +156,14 @@ export class LocalProjectStore {
 
             const projectPath = path.join(this.projectsDir, safeName);
 
-            // Check if already exists
-            if (await this.exists(projectPath)) {
-                throw new Error(`Project "${safeName}" already exists`);
+            try {
+                await mkdir(projectPath, { recursive: false });
+            } catch (error: unknown) {
+                if (error && typeof error === 'object' && 'code' in error && (error as any).code === 'EEXIST') {
+                    throw new Error(`Project "${safeName}" already exists`);
+                }
+                throw error;
             }
-
-            await mkdir(projectPath, { recursive: true });
 
             // Validate template content
             const mainContent = template || this.getDefaultTemplate();
@@ -724,8 +726,9 @@ Welcome to your new LaTeX document!
             // Sort by score descending and limit
             results.sort((a, b) => b.score - a.score);
             return results.slice(0, limit);
-        } catch {
-            return [];
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Search failed: ${message}`);
         }
     }
 }

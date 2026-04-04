@@ -4,10 +4,10 @@
  * @module lib/oauth/store
  */
 
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { oauthConfig } from './config.js';
 import type {
     OAuthClient,
@@ -94,7 +94,9 @@ async function loadJson<T>(path: string): Promise<Map<string, T>> {
 
 async function saveJson<T>(path: string, data: Map<string, T>): Promise<void> {
     const obj = Object.fromEntries(data);
-    await writeFile(path, JSON.stringify(obj, null, 2), 'utf8');
+    const tempPath = `${path}.tmp`;
+    await writeFile(tempPath, JSON.stringify(obj, null, 2), 'utf8');
+    await rename(tempPath, path);
 }
 
 // ============================================
@@ -126,7 +128,12 @@ async function verifyPasswordAsync(password: string, storedHash: string): Promis
     if (!storedHash.includes(':')) {
         // Legacy SHA-256 format — for backward compatibility
         const legacyHash = createHash('sha256').update(password + oauthConfig.jwtSecret).digest('hex');
-        return legacyHash === storedHash;
+        const legacyBuffer = Buffer.from(legacyHash, 'utf8');
+        const storedBuffer = Buffer.from(storedHash, 'utf8');
+        if (legacyBuffer.length !== storedBuffer.length) {
+            return false;
+        }
+        return timingSafeEqual(legacyBuffer, storedBuffer);
     }
 
     const [salt, hash] = storedHash.split(':');
@@ -141,7 +148,14 @@ function hashPassword(password: string): string {
 }
 
 function verifyPassword(password: string, hash: string): boolean {
-    return hashPassword(password) === hash;
+    const computed = hashPassword(password);
+    const computedBuffer = Buffer.from(computed, 'utf8');
+    const hashBuffer = Buffer.from(hash, 'utf8');
+    if (computedBuffer.length !== hashBuffer.length) {
+        return false;
+    }
+    // Keep client secret checks constant-time.
+    return timingSafeEqual(computedBuffer, hashBuffer);
 }
 
 // ============================================
@@ -152,6 +166,7 @@ export async function createClient(data: {
     clientName: string;
     redirectUris: string[];
     grantTypes?: string[];
+    tokenEndpointAuthMethod?: 'client_secret_basic' | 'client_secret_post' | 'none';
 }): Promise<{ client: OAuthClient; clientSecret: string }> {
     await initializeStore();
 
@@ -167,6 +182,7 @@ export async function createClient(data: {
         grant_types: (data.grantTypes || ['authorization_code', 'refresh_token']) as any,
         response_types: ['code'],
         scope: oauthConfig.defaultScopes,
+        token_endpoint_auth_method: data.tokenEndpointAuthMethod || 'client_secret_post',
         created_at: now,
         updated_at: now,
     };
@@ -199,8 +215,20 @@ export async function createUser(data: {
 }): Promise<OAuthUser> {
     await initializeStore();
 
+    const email = (data.email || '').trim().toLowerCase();
+    const displayName = (data.displayName || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Invalid email format');
+    }
+    if (!data.password || data.password.length < 8 || data.password.length > 128) {
+        throw new Error('Password must be between 8 and 128 characters');
+    }
+    if (displayName.length < 2 || displayName.length > 80) {
+        throw new Error('Display name must be between 2 and 80 characters');
+    }
+
     // Check if email exists
-    const existing = Array.from(users.values()).find(u => u.email === data.email);
+    const existing = Array.from(users.values()).find(u => u.email === email);
     if (existing) {
         throw new Error('Email already registered');
     }
@@ -210,9 +238,9 @@ export async function createUser(data: {
 
     const user: OAuthUser = {
         user_id: userId,
-        email: data.email,
+        email,
         password_hash: await hashPasswordAsync(data.password),
-        display_name: data.displayName,
+        display_name: displayName,
         created_at: now,
         updated_at: now,
     };
@@ -230,7 +258,8 @@ export async function getUser(userId: string): Promise<OAuthUser | null> {
 
 export async function getUserByEmail(email: string): Promise<OAuthUser | null> {
     await initializeStore();
-    return Array.from(users.values()).find(u => u.email === email) || null;
+    const normalized = (email || '').trim().toLowerCase();
+    return Array.from(users.values()).find(u => u.email === normalized) || null;
 }
 
 export async function verifyUserPassword(email: string, password: string): Promise<OAuthUser | null> {

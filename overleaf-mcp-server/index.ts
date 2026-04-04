@@ -14,7 +14,15 @@
 import { MCPServer } from "mcp-use/server";
 import { registerTools } from "./tools/index.js";
 import { registerPrompts } from "./prompts/index.js";
-import { projectStore, startRateLimitCleanup } from "./lib/index.js";
+import {
+    projectStore,
+    startRateLimitCleanup,
+    checkRateLimit,
+    validateApiKey,
+    logRequest,
+    securityHeaders,
+    prodConfig,
+} from "./lib/index.js";
 
 // ============================================
 // Server Configuration
@@ -227,6 +235,7 @@ import {
     handleToken,
     handleRevoke,
 } from "./lib/oauth/index.js";
+import { validateBearerToken, hasScope } from "./lib/oauth/middleware.js";
 
 if (oauthConfig.enabled) {
     try {
@@ -247,6 +256,185 @@ if (oauthConfig.enabled) {
 
 // Start rate limit cleanup timer
 startRateLimitCleanup();
+
+// Mount core security middleware on the underlying HTTP app if available.
+if ((server as any).app) {
+    const app = (server as any).app;
+
+    if (typeof app.use !== 'function') {
+        console.warn('⚠️ Underlying app does not expose middleware hooks; skipping runtime middleware wiring');
+    } else {
+
+        // Only trust proxy headers when explicitly enabled.
+        if (typeof app.set === 'function') {
+            app.set('trust proxy', process.env.TRUST_PROXY === 'true');
+        }
+
+        app.use(async (a: any, b: any, c: any) => {
+            const start = Date.now();
+            const isHonoStyle = typeof b === 'function' && typeof c === 'undefined' && a?.req;
+
+            if (isHonoStyle) {
+                const ctx = a;
+                const next = b;
+                const path = String(ctx.req?.path || '');
+                const method = String(ctx.req?.method || 'GET');
+                const authHeader = ctx.req?.header?.('authorization') || null;
+                const clientIp = ctx.req?.header?.('x-forwarded-for') || ctx.req?.header?.('x-real-ip') || 'unknown';
+
+                for (const [key, value] of Object.entries(securityHeaders)) {
+                    ctx.header(key, value);
+                }
+
+                if (!validateApiKey(authHeader)) {
+                    return ctx.json({ error: 'unauthorized', error_description: 'Invalid API key' }, 401);
+                }
+
+                const rate = checkRateLimit(clientIp);
+                ctx.header('X-RateLimit-Limit', String(prodConfig.rateLimit));
+                ctx.header('X-RateLimit-Remaining', String(rate.remaining));
+                ctx.header('X-RateLimit-Reset', String(Math.ceil(rate.resetIn / 1000)));
+                if (!rate.allowed) {
+                    return ctx.json({ error: 'rate_limited', error_description: 'Too many requests' }, 429);
+                }
+
+                if (oauthConfig.enabled && (path === '/mcp' || path === '/sse')) {
+                    const oauthContext = await validateBearerToken(authHeader);
+                    if (!oauthContext) {
+                        return ctx.json({ error: 'invalid_token', error_description: 'Bearer token required' }, 401);
+                    }
+                    ctx.set('oauthContext', oauthContext);
+
+                    if (path === '/mcp' && method === 'POST') {
+                        let requestBody: any;
+                        try {
+                            requestBody = await ctx.req.raw.clone().json();
+                        } catch {
+                            requestBody = undefined;
+                        }
+
+                        if (requestBody?.method === 'tools/call') {
+                            const toolName = String(requestBody?.params?.name || '');
+                            let requiredScope: 'read' | 'write' | 'admin' = 'read';
+
+                            if (toolName === 'latex_delete_project' || toolName === 'latex_delete_file') {
+                                requiredScope = 'admin';
+                            } else if (
+                                toolName === 'latex_create_project' ||
+                                toolName === 'latex_write_file' ||
+                                toolName === 'latex_compile' ||
+                                toolName === 'latex_open_in_overleaf' ||
+                                toolName === 'latex_export_zip'
+                            ) {
+                                requiredScope = 'write';
+                            }
+
+                            if (!hasScope(oauthContext, requiredScope)) {
+                                return ctx.json({
+                                    error: 'insufficient_scope',
+                                    error_description: `Tool ${toolName} requires ${requiredScope} scope`,
+                                }, 403);
+                            }
+                        }
+                    }
+                }
+
+                const result = await next();
+                logRequest({
+                    timestamp: new Date().toISOString(),
+                    method,
+                    path,
+                    ip: clientIp,
+                    userAgent: ctx.req?.header?.('user-agent') || '',
+                    statusCode: ctx.res?.status,
+                    duration: Date.now() - start,
+                });
+                return result;
+            }
+
+            const req = a;
+            const res = b;
+            const next = c;
+
+            for (const [key, value] of Object.entries(securityHeaders)) {
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader(key, value);
+                }
+            }
+
+            const authHeader = typeof req.headers?.authorization === 'string' ? req.headers.authorization : null;
+            if (!validateApiKey(authHeader)) {
+                res.status(401).json({ error: 'unauthorized', error_description: 'Invalid API key' });
+                return;
+            }
+
+            const clientIp = typeof req.ip === 'string'
+                ? req.ip
+                : (typeof req.socket?.remoteAddress === 'string' ? req.socket.remoteAddress : 'unknown');
+            const rate = checkRateLimit(clientIp);
+            if (typeof res.setHeader === 'function') {
+                res.setHeader('X-RateLimit-Limit', String(prodConfig.rateLimit));
+                res.setHeader('X-RateLimit-Remaining', String(rate.remaining));
+                res.setHeader('X-RateLimit-Reset', String(Math.ceil(rate.resetIn / 1000)));
+            }
+
+            if (!rate.allowed) {
+                res.status(429).json({ error: 'rate_limited', error_description: 'Too many requests' });
+                return;
+            }
+
+            if (oauthConfig.enabled && (req.path === '/mcp' || req.path === '/sse')) {
+                const oauthContext = await validateBearerToken(authHeader);
+                if (!oauthContext) {
+                    res.status(401).json({ error: 'invalid_token', error_description: 'Bearer token required' });
+                    return;
+                }
+                req.oauthContext = oauthContext;
+
+                if (req.path === '/mcp' && req.method === 'POST' && req.body?.method === 'tools/call') {
+                    const toolName = String(req.body?.params?.name || '');
+                    let requiredScope: 'read' | 'write' | 'admin' = 'read';
+
+                    if (toolName === 'latex_delete_project' || toolName === 'latex_delete_file') {
+                        requiredScope = 'admin';
+                    } else if (
+                        toolName === 'latex_create_project' ||
+                        toolName === 'latex_write_file' ||
+                        toolName === 'latex_compile' ||
+                        toolName === 'latex_open_in_overleaf' ||
+                        toolName === 'latex_export_zip'
+                    ) {
+                        requiredScope = 'write';
+                    }
+
+                    if (!hasScope(oauthContext, requiredScope)) {
+                        res.status(403).json({
+                            error: 'insufficient_scope',
+                            error_description: `Tool ${toolName} requires ${requiredScope} scope`,
+                        });
+                        return;
+                    }
+                }
+            }
+
+            if (typeof res.on === 'function') {
+                res.on('finish', () => {
+                    logRequest({
+                        timestamp: new Date().toISOString(),
+                        method: req.method,
+                        path: req.originalUrl || req.url,
+                        ip: clientIp,
+                        userAgent: typeof req.headers?.['user-agent'] === 'string' ? req.headers['user-agent'] : '',
+                        statusCode: res.statusCode,
+                        duration: Date.now() - start,
+                    });
+                });
+            }
+
+            next();
+        });
+    }
+}
 
 // === Mount OAuth HTTP Endpoints ===
 // These endpoints implement the OAuth 2.1 flow required for ChatGPT App integration

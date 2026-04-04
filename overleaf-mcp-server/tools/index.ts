@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { MCPServer } from "mcp-use/server";
+import { widget, text } from "mcp-use/server";
 import {
     projectStore,
     latexOnline,
@@ -113,18 +114,34 @@ export function registerTools(server: MCPServer) {
             project: z.string().describe("Project name"),
         }),
         annotations: { readOnlyHint: true },
+        widget: {
+            name: "project-browser",
+            invoking: "Loading project...",
+            invoked: "Project loaded",
+        },
     }, async ({ project }) => {
         try {
             if (!project || typeof project !== 'string' || project.trim().length === 0) {
                 throw new Error('Project name is required and must be a non-empty string');
             }
             const status = await projectStore.getProjectStatus(project.trim());
-            return {
-                content: [{
-                    type: "text",
-                    text: `📊 Project: ${status.project.name}\n📁 Files: ${status.files.length} total (${status.texFiles.length} .tex)\n🎯 Main file: ${status.project.mainFile || "not detected"}\n🖼️  Has images: ${status.hasImages ? "Yes" : "No"}\n📚 Has bibliography: ${status.hasBibliography ? "Yes" : "No"}\n🕒 Last modified: ${status.project.lastModified.toISOString()}`,
-                }],
-            };
+            
+            // Return widget with project status
+            return widget({
+                props: {
+                    projectName: status.project.name,
+                    path: status.project.path,
+                    createdAt: status.project.createdAt.toISOString(),
+                    lastModified: status.project.lastModified.toISOString(),
+                    mainFile: status.project.mainFile,
+                    fileCount: status.project.fileCount,
+                    files: status.files,
+                    texFiles: status.texFiles,
+                    hasImages: status.hasImages,
+                    hasBibliography: status.hasBibliography,
+                },
+                output: text(`📊 Project: ${status.project.name} (${status.files.length} files)`),
+            });
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return {
@@ -254,27 +271,49 @@ export function registerTools(server: MCPServer) {
             engine: z.enum(["pdflatex", "xelatex", "lualatex"]).optional().describe("LaTeX engine"),
             rootFile: z.string().optional().describe("Main file to compile"),
         }),
+        widget: {
+            name: "latex-pdf-viewer",
+            invoking: "Compiling LaTeX document...",
+            invoked: "Compilation complete",
+        },
     }, async ({ project, engine, rootFile }) => {
         try {
             if (!project || typeof project !== 'string' || project.trim().length === 0) {
                 throw new Error('Project name is required and must be a non-empty string');
             }
             const result = await latexOnline.compileProject(project.trim(), rootFile, { engine });
-            if (result.success) {
-                return {
-                    content: [{ type: "text", text: `✅ Compilation successful (${result.duration}ms)\n📄 PDF saved to: ${result.pdfPath}` }],
-                };
-            } else {
-                const errorText = result.errors.map((e) => `Line ${e.line}: ${e.message}`).join("\n");
-                return {
-                    content: [{ type: "text", text: `❌ Compilation failed (${result.duration}ms)\n\n🚨 Errors:\n${errorText || "Unknown error"}` }],
-                };
-            }
+            
+            // Return widget with compilation results
+            return widget({
+                props: {
+                    projectName: project.trim(),
+                    mainFile: rootFile || result.pdfPath || "main.tex",
+                    success: result.success,
+                    pdfBase64: result.pdfBase64,
+                    errors: result.errors,
+                    warnings: result.warnings,
+                    duration: result.duration,
+                    engine: engine || "pdflatex",
+                },
+                output: text(result.success 
+                    ? `✅ Compilation successful (${result.duration}ms)`
+                    : `❌ Compilation failed with ${result.errors.length} error(s)`
+                ),
+            });
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return {
-                content: [{ type: "text", text: `❌ Compilation error: ${errorMessage}` }],
-            };
+            return widget({
+                props: {
+                    projectName: project,
+                    mainFile: rootFile || "main.tex",
+                    success: false,
+                    errors: [{ line: 0, message: errorMessage, type: "other" as const }],
+                    warnings: [],
+                    duration: 0,
+                    engine: engine || "pdflatex",
+                },
+                output: text(`❌ Compilation error: ${errorMessage}`),
+            });
         }
     });
 
@@ -284,6 +323,11 @@ export function registerTools(server: MCPServer) {
         schema: z.object({
             project: z.string().describe("Project name"),
         }),
+        widget: {
+            name: "compile-status",
+            invoking: "Analyzing log...",
+            invoked: "Analysis complete",
+        },
     }, async ({ project }) => {
         try {
             if (!project || typeof project !== 'string' || project.trim().length === 0) {
@@ -294,14 +338,19 @@ export function registerTools(server: MCPServer) {
                 return { content: [{ type: "text", text: "ℹ️ No compilation log found. Run latex_compile first." }] };
             }
             const parsed = parseLog(log);
-            let output = `📋 ${parsed.summary}\n\n`;
-            if (parsed.errors.length > 0) {
-                output += "🚨 ERRORS:\n" + parsed.errors.map((e) => `  Line ${e.line}: ${e.message}`).join("\n") + "\n\n";
-            }
-            if (parsed.warnings.length > 0) {
-                output += "⚠️ WARNINGS:\n" + parsed.warnings.map((w) => `  ${w.line ? `Line ${w.line}: ` : ""}${w.message}`).join("\n");
-            }
-            return { content: [{ type: "text", text: output }] };
+            
+            // Return widget with log analysis
+            return widget({
+                props: {
+                    projectName: project.trim(),
+                    success: parsed.errors.length === 0,
+                    errors: parsed.errors,
+                    warnings: parsed.warnings,
+                    summary: parsed.summary,
+                    rawLog: log,
+                },
+                output: text(`📋 ${parsed.summary}`),
+            });
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return {

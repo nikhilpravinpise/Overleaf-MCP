@@ -18,6 +18,7 @@ export interface OAuthClient {
     grant_types: GrantType[];
     response_types: ResponseType[];
     scope: string;
+    token_endpoint_auth_method: 'client_secret_basic' | 'client_secret_post' | 'none';
     created_at: string;
     updated_at: string;
 }

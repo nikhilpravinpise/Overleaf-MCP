@@ -1,6 +1,5 @@
-// Simple test endpoint for Vercel
+// Vercel guard endpoint: this repository's MCP server must run as a persistent process.
 module.exports = async (req, res) => {
-  // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -10,24 +9,13 @@ module.exports = async (req, res) => {
     return;
   }
   
-  try {
-    console.log('Request received:', req.method, req.url);
-    
-    // Simple test response
-    res.status(200).json({ 
-      status: 'Overleaf MCP Server',
-      message: 'Server is running on Vercel',
-      method: req.method,
-      url: req.url,
-      timestamp: new Date().toISOString(),
-      chatgpt_ready: true,
-      endpoints: {
-        mcp: '/mcp',
-        sse: '/sse'
-      }
-    });
-  } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
+  res.status(501).json({
+    status: 'unsupported_deployment',
+    message: 'This Vercel function does not run the MCP transport in this repository.',
+    action: 'Deploy overleaf-mcp-server as a persistent Node service (Railway, Render, Fly.io) and use /mcp as your ChatGPT connector URL.',
+    docs: {
+      deployment: '/README-DEPLOYMENT.md',
+      server: '/overleaf-mcp-server/README.md'
+    }
+  });
 };

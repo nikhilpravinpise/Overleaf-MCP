@@ -4,7 +4,7 @@ This document describes the internal architecture of the Overleaf MCP Server.
 
 ## System Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         MCP Client (LLM)                            │
 │              (ChatGPT Deep Research, Claude, etc.)                  │
@@ -52,7 +52,7 @@ This document describes the internal architecture of the Overleaf MCP Server.
 
 ## Directory Structure
 
-```
+```text
 overleaf-mcp-server/
 ├── index.ts              # Server entry, resource definitions, OAuth routes
 ├── lib/                  # Core business logic

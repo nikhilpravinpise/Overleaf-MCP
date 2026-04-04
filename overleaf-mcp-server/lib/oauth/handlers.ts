@@ -47,7 +47,7 @@ export function handleMetadata(): AuthorizationServerMetadata {
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
     };
 }
 
@@ -62,6 +62,7 @@ export async function handleClientRegistration(body: {
     client_name: string;
     redirect_uris: string[];
     grant_types?: string[];
+    token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none';
 }): Promise<ClientRegistrationResponse> {
     await initializeStore();
 
@@ -114,7 +115,9 @@ export async function handleClientRegistration(body: {
             throw createOAuthError('invalid_request', 'redirect_uris must use HTTP or HTTPS protocol');
         }
         
-        if (parsedUrl.protocol === 'http:' && !parsedUrl.hostname?.includes('localhost')) {
+        const host = parsedUrl.hostname.toLowerCase();
+        const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        if (parsedUrl.protocol === 'http:' && !isLoopback) {
             throw createOAuthError('invalid_request', 'HTTP redirect URIs must be localhost only');
         }
         
@@ -138,10 +141,15 @@ export async function handleClientRegistration(body: {
         }
     }
 
+    if (body.token_endpoint_auth_method && !['client_secret_basic', 'client_secret_post', 'none'].includes(body.token_endpoint_auth_method)) {
+        throw createOAuthError('invalid_request', 'Invalid token_endpoint_auth_method');
+    }
+
     const { client, clientSecret } = await createClient({
         clientName,
         redirectUris: body.redirect_uris.map(uri => uri.trim()),
         grantTypes: body.grant_types,
+        tokenEndpointAuthMethod: body.token_endpoint_auth_method,
     });
 
     return {
@@ -212,6 +220,29 @@ export async function handleAuthorizePost(body: {
 }): Promise<{ redirectUrl: string } | { error: string; html: string }> {
     await initializeStore();
 
+    if (!body || typeof body !== 'object') {
+        return { error: 'invalid_request', html: errorPage('invalid_request', 'Request body is required') };
+    }
+
+    if (!body.email || typeof body.email !== 'string' || body.email.trim().length === 0) {
+        return { error: 'invalid_request', html: errorPage('invalid_request', 'Email is required') };
+    }
+
+    const email = body.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { error: 'invalid_request', html: errorPage('invalid_request', 'Email format is invalid') };
+    }
+
+    if (!body.password || typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 128) {
+        return { error: 'invalid_request', html: errorPage('invalid_request', 'Password must be between 8 and 128 characters') };
+    }
+
+    if (!body.scope || typeof body.scope !== 'string' || body.scope.trim().length === 0) {
+        return { error: 'invalid_request', html: errorPage('invalid_request', 'Scope is required') };
+    }
+
+    const scope = body.scope.trim();
+
     // Validate client
     const client = await getClient(body.client_id);
     if (!client) {
@@ -227,13 +258,13 @@ export async function handleAuthorizePost(body: {
 
     if (body.action === 'register') {
         // Register new user
-        if (!body.display_name) {
+        if (!body.display_name || typeof body.display_name !== 'string') {
             return {
                 error: 'invalid_request',
                 html: getConsentPage({
                     clientId: body.client_id,
                     redirectUri: body.redirect_uri,
-                    scope: body.scope,
+                    scope,
                     state: body.state,
                     codeChallenge: body.code_challenge,
                     error: 'Display name is required for registration',
@@ -241,11 +272,26 @@ export async function handleAuthorizePost(body: {
             };
         }
 
+        const displayName = body.display_name.trim();
+        if (displayName.length < 2 || displayName.length > 80) {
+            return {
+                error: 'invalid_request',
+                html: getConsentPage({
+                    clientId: body.client_id,
+                    redirectUri: body.redirect_uri,
+                    scope,
+                    state: body.state,
+                    codeChallenge: body.code_challenge,
+                    error: 'Display name must be between 2 and 80 characters',
+                }),
+            };
+        }
+
         try {
             user = await createUser({
-                email: body.email,
+                email,
                 password: body.password,
-                displayName: body.display_name,
+                displayName,
             });
         } catch (e: any) {
             return {
@@ -253,7 +299,7 @@ export async function handleAuthorizePost(body: {
                 html: getConsentPage({
                     clientId: body.client_id,
                     redirectUri: body.redirect_uri,
-                    scope: body.scope,
+                    scope,
                     state: body.state,
                     codeChallenge: body.code_challenge,
                     error: e.message || 'Registration failed',
@@ -262,14 +308,14 @@ export async function handleAuthorizePost(body: {
         }
     } else {
         // Login existing user
-        user = await verifyUserPassword(body.email, body.password);
+        user = await verifyUserPassword(email, body.password);
         if (!user) {
             return {
                 error: 'invalid_credentials',
                 html: getConsentPage({
                     clientId: body.client_id,
                     redirectUri: body.redirect_uri,
-                    scope: body.scope,
+                    scope,
                     state: body.state,
                     codeChallenge: body.code_challenge,
                     error: 'Invalid email or password',
@@ -283,7 +329,7 @@ export async function handleAuthorizePost(body: {
         clientId: body.client_id,
         userId: user.user_id,
         redirectUri: body.redirect_uri,
-        scope: body.scope,
+        scope,
         codeChallenge: body.code_challenge,
     });
 
@@ -344,12 +390,16 @@ export async function handleToken(body: {
         throw createOAuthError('invalid_client', 'Unknown client');
     }
 
-    // Verify client secret if provided (must match for confidential clients)
-    if (body.client_secret) {
-        if (typeof body.client_secret !== 'string') {
-            throw createOAuthError('invalid_client', 'client_secret must be a string');
+    // Enforce client authentication policy.
+    if (client.token_endpoint_auth_method === 'none') {
+        if (body.client_secret) {
+            throw createOAuthError('invalid_client', 'Public clients must not send client_secret');
         }
-        
+    } else {
+        if (!body.client_secret || typeof body.client_secret !== 'string' || body.client_secret.trim().length === 0) {
+            throw createOAuthError('invalid_client', 'client_secret is required for this client');
+        }
+
         if (!(await verifyClientSecret(clientId, body.client_secret))) {
             throw createOAuthError('invalid_client', 'Invalid client credentials');
         }
@@ -513,12 +563,41 @@ export async function handleRevoke(body: {
 }): Promise<void> {
     await initializeStore();
 
+    if (!body || typeof body !== 'object' || !body.token || typeof body.token !== 'string') {
+        return;
+    }
+
+    if (!body.client_id || typeof body.client_id !== 'string') {
+        return;
+    }
+
+    const client = await getClient(body.client_id);
+    if (!client) {
+        return;
+    }
+
     // Validate client
-    if (body.client_secret && !(await verifyClientSecret(body.client_id, body.client_secret))) {
+    if (client.token_endpoint_auth_method !== 'none') {
+        if (!body.client_secret || !(await verifyClientSecret(body.client_id, body.client_secret))) {
+            throw createOAuthError('invalid_client', 'Invalid client credentials');
+        }
+    } else if (body.client_secret) {
         throw createOAuthError('invalid_client', 'Invalid client credentials');
     }
 
-    // Try to decode as access token or refresh token
+    // Revoke token by jti regardless of type if decode succeeds.
+    const accessParts = body.token.split('.');
+    if (accessParts.length === 3) {
+        try {
+            const payload = JSON.parse(Buffer.from(accessParts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) as { jti?: string };
+            if (payload.jti) {
+                await revokeToken(payload.jti);
+            }
+        } catch {
+            // Ignore malformed token payloads.
+        }
+    }
+
     const decoded = decodeRefreshToken(body.token);
     if (decoded) {
         await revokeToken(decoded.jti);
@@ -578,6 +657,17 @@ function getConsentPage(params: {
     codeChallenge: string;
     error?: string;
 }): string {
+    const escapedClientId = escapeHtml(params.clientId);
+    const escapedRedirectUri = escapeHtml(params.redirectUri);
+    const escapedScope = escapeHtml(params.scope);
+    const escapedState = escapeHtml(params.state);
+    const escapedCodeChallenge = escapeHtml(params.codeChallenge);
+    const safeScopeChips = params.scope
+        .split(' ')
+        .filter(Boolean)
+        .map(s => `<span class="scope">${escapeHtml(s)}</span>`)
+        .join('');
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -615,23 +705,23 @@ function getConsentPage(params: {
     <div class="scopes">
       <h3>Requested Permissions:</h3>
       <div class="scope-list">
-        ${params.scope.split(' ').map(s => `<span class="scope">${s}</span>`).join('')}
+                ${safeScopeChips}
       </div>
     </div>
 
     ${params.error ? `<div class="error-msg">${escapeHtml(params.error)}</div>` : ''}
 
     <div class="tabs">
-      <button class="tab active" onclick="showTab('login')">Sign In</button>
-      <button class="tab" onclick="showTab('register')">Register</button>
+            <button class="tab active" onclick="showTab('login', event)">Sign In</button>
+            <button class="tab" onclick="showTab('register', event)">Register</button>
     </div>
 
     <form method="POST" action="/authorize">
-      <input type="hidden" name="client_id" value="${params.clientId}">
-      <input type="hidden" name="redirect_uri" value="${params.redirectUri}">
-      <input type="hidden" name="scope" value="${params.scope}">
-      <input type="hidden" name="state" value="${params.state}">
-      <input type="hidden" name="code_challenge" value="${params.codeChallenge}">
+            <input type="hidden" name="client_id" value="${escapedClientId}">
+            <input type="hidden" name="redirect_uri" value="${escapedRedirectUri}">
+            <input type="hidden" name="scope" value="${escapedScope}">
+            <input type="hidden" name="state" value="${escapedState}">
+            <input type="hidden" name="code_challenge" value="${escapedCodeChallenge}">
       <input type="hidden" name="action" id="action" value="login">
 
       <div class="register-fields" id="registerFields">
@@ -649,8 +739,8 @@ function getConsentPage(params: {
     </div>
   </div>
 
-  <script>
-    function showTab(tab) {
+    <script>
+        function showTab(tab, event) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       event.target.classList.add('active');
       document.getElementById('action').value = tab;

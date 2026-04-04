@@ -17,10 +17,11 @@ npm install
 npm run dev
 
 # Access the server
+# MCP endpoint: http://localhost:3000/mcp
 # SSE endpoint: http://localhost:3000/sse
 # Inspector UI: http://localhost:3000/inspector
 ```
-
+  
 ## Features
 
 - 🆓 **100% Free** - No paid APIs or subscriptions required
@@ -36,14 +37,14 @@ npm run dev
 ### ChatGPT Deep Research (Required)
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `search` | Search all projects/files (OpenAI format) |
 | `fetch` | Retrieve full document by ID (OpenAI format) |
 
 ### Project Management
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `latex_create_project` | Create a new LaTeX project |
 | `latex_list_projects` | List all local projects |
 | `latex_delete_project` | Delete a project |
@@ -52,7 +53,7 @@ npm run dev
 ### File Operations
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `latex_list_files` | List files in a project |
 | `latex_read_file` | Read file content |
 | `latex_write_file` | Write content to file |
@@ -61,7 +62,7 @@ npm run dev
 ### Compilation & Export
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `latex_compile` | Compile to PDF via LaTeX.Online |
 | `latex_analyze_log` | Parse last compilation log |
 | `latex_open_in_overleaf` | Generate Overleaf URL |
@@ -70,7 +71,7 @@ npm run dev
 ### Utilities
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `latex_validate` | Quick syntax validation |
 | `latex_search_packages` | Search CTAN packages |
 | `latex_get_package_info` | Get package details |
@@ -82,9 +83,9 @@ This server implements OpenAI's MCP specification for **Deep Research** and **Co
 
 ### Setup with ChatGPT
 
-1. Deploy server with public URL (Replit, Vercel, etc.)
+1. Deploy server with a persistent Node.js host and public HTTPS URL
 2. Enable Developer Mode: **Settings → Connectors → Advanced → Developer mode**
-3. Add connector with SSE endpoint: `https://your-server.com/sse/`
+3. Add connector with MCP endpoint: `https://your-server.com/mcp`
 
 ### API Usage
 
@@ -97,17 +98,19 @@ curl https://api.openai.com/v1/responses \
     "tools": [{
       "type": "mcp",
       "server_label": "latex",
-      "server_url": "https://your-server.com/sse/",
+      "server_url": "https://your-server.com/mcp",
       "allowed_tools": ["search", "fetch"],
       "require_approval": "never"
     }]
   }'
 ```
 
+If you are using API-based remote MCP integrations, `/sse` remains available as an alternate transport.
+
 ## MCP Resources (6)
 
 | URI | Description |
-|-----|-------------|
+| --- | ----------- |
 | `latex://projects` | List of all projects (JSON) |
 | `latex://project/{name}` | Project metadata |
 | `latex://project/{name}/file/{path}` | File content |
@@ -139,7 +142,7 @@ Copy `config.example.json` to `config.json`:
 
 ## Architecture
 
-```
+```text
 overleaf-mcp-server/
 ├── lib/                        # Core libraries
 │   ├── types.ts                # TypeScript interfaces
@@ -158,7 +161,7 @@ overleaf-mcp-server/
 ## External Services (All FREE)
 
 | Service | Purpose |
-|---------|---------|
+| ------- | ------- |
 | [LaTeX.Online](https://latexonline.cc) | PDF compilation |
 | [CTAN API](https://ctan.org/json/2.0) | Package search |
 | [Overleaf](https://www.overleaf.com/devs) | Open in Overleaf |

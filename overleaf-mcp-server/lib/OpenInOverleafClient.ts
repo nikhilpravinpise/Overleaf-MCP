@@ -6,6 +6,7 @@ import { projectStore } from "./LocalProjectStore.js";
 // ============================================
 
 const OVERLEAF_DOCS_URL = "https://www.overleaf.com/docs";
+const MAX_URL_PAYLOAD_SIZE = 1 * 1024 * 1024;
 
 export class OpenInOverleafClient {
     private baseUrl: string;
@@ -64,6 +65,13 @@ export class OpenInOverleafClient {
      * Useful when content is already encoded
      */
     generateFromBase64(base64Content: string, options: OverleafUrlOptions = {}): string {
+        if (typeof base64Content !== 'string' || base64Content.trim().length === 0) {
+            throw new Error('Base64 content must be a non-empty string');
+        }
+        if (base64Content.length > MAX_URL_PAYLOAD_SIZE * 2) {
+            throw new Error('Base64 content too large for URL-based transfer');
+        }
+
         const params = new URLSearchParams();
 
         // Use data URL format
@@ -126,9 +134,24 @@ export class OpenInOverleafClient {
      * Generate URL to open a remote .tex file
      */
     generateFromUrl(texUrl: string, options: OverleafUrlOptions = {}): string {
+        if (typeof texUrl !== 'string' || texUrl.trim().length === 0) {
+            throw new Error('URL must be a non-empty string');
+        }
+
+        let parsed: URL;
+        try {
+            parsed = new URL(texUrl.trim());
+        } catch {
+            throw new Error('Invalid URL format');
+        }
+
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            throw new Error('Only HTTP and HTTPS URLs are allowed');
+        }
+
         const params = new URLSearchParams();
 
-        params.set("snip_uri", texUrl);
+        params.set("snip_uri", parsed.toString());
 
         this.addOptions(params, options);
 
@@ -144,10 +167,27 @@ export class OpenInOverleafClient {
         files: Array<{ uri: string; name?: string }>,
         options: OverleafUrlOptions = {}
     ): string {
+        if (!Array.isArray(files) || files.length === 0) {
+            throw new Error('Files must be a non-empty array');
+        }
+
         const params = new URLSearchParams();
 
         for (const file of files) {
-            params.append("snip_uri[]", file.uri);
+            if (!file || typeof file.uri !== 'string' || file.uri.trim().length === 0) {
+                throw new Error('Each file entry must contain a non-empty uri');
+            }
+            let parsed: URL;
+            try {
+                parsed = new URL(file.uri.trim());
+            } catch {
+                throw new Error(`Invalid file URL: ${file.uri}`);
+            }
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                throw new Error('Only HTTP and HTTPS URLs are allowed');
+            }
+
+            params.append("snip_uri[]", parsed.toString());
             if (file.name) {
                 params.append("snip_name[]", file.name);
             }

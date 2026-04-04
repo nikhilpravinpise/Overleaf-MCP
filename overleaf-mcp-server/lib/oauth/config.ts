@@ -171,10 +171,18 @@ export const oauthConfig = {
     enabled: process.env.OAUTH_ENABLED === 'true',
 
     /** Issuer URL (server base URL) */
-    issuer: validateUrl(process.env.OAUTH_ISSUER || process.env.BASE_URL, 'OAUTH_ISSUER'),
+    issuer: process.env.OAUTH_ENABLED === 'true'
+        ? validateUrl(process.env.OAUTH_ISSUER || process.env.BASE_URL, 'OAUTH_ISSUER')
+        : (() => {
+            const base = validateValue(process.env.BASE_URL, 'BASE_URL');
+            const fallback = `http://localhost:${process.env.PORT || 3000}`;
+            return base ? validateUrl(base, 'BASE_URL') : fallback;
+        })(),
 
     /** JWT signing secret (must be secure in production) */
-    jwtSecret: process.env.OAUTH_ENABLED === 'true' ? validateJWTSecret(process.env.OAUTH_JWT_SECRET) : 'dev-secret-change-in-production',
+    jwtSecret: process.env.OAUTH_ENABLED === 'true'
+        ? validateJWTSecret(process.env.OAUTH_JWT_SECRET)
+        : (process.env.OAUTH_JWT_SECRET || 'dev-secret-change-in-production'),
 
     /** Access token TTL in seconds (default: 1 hour) */
     accessTokenTTL: validateTTL(process.env.OAUTH_ACCESS_TOKEN_TTL, 'OAUTH_ACCESS_TOKEN_TTL', 3600),

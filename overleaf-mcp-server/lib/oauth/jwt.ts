@@ -3,7 +3,7 @@
  * @module lib/oauth/jwt
  */
 
-import { createHmac, randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { oauthConfig } from './config.js';
 import type { JWTPayload } from './types.js';
 
@@ -109,7 +109,10 @@ export function verifyAccessToken(token: string): JWTPayload | null {
 
         // Verify signature
         const expectedSignature = sign(`${header}.${body}`, oauthConfig.jwtSecret);
-        if (signature !== expectedSignature) return null;
+        const signatureBuffer = Buffer.from(signature, 'utf8');
+        const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+        if (signatureBuffer.length !== expectedBuffer.length) return null;
+        if (!timingSafeEqual(signatureBuffer, expectedBuffer)) return null;
 
         // Decode payload
         const payload: JWTPayload = JSON.parse(base64UrlDecode(body));
@@ -138,7 +141,10 @@ export function decodeRefreshToken(token: string): { jti: string } | null {
 
         // Verify signature
         const expectedSignature = sign(`${header}.${body}`, oauthConfig.jwtSecret);
-        if (signature !== expectedSignature) return null;
+        const signatureBuffer = Buffer.from(signature, 'utf8');
+        const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+        if (signatureBuffer.length !== expectedBuffer.length) return null;
+        if (!timingSafeEqual(signatureBuffer, expectedBuffer)) return null;
 
         // Decode payload
         const payload = JSON.parse(base64UrlDecode(body));
