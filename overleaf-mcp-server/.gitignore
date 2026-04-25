@@ -25,10 +25,15 @@ Thumbs.db
 
 # Logs
 *.log
-npm-debug.log*
 
 # Skills (if any)
 .github/skills/
 
 # OAuth data
 data/
+
+# Test files and debug output
+test-*.ts
+test-*/
+debug-*.png
+test-projects.json

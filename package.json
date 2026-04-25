@@ -1,12 +1,30 @@
 {
-  "name": "overleaf-mcp-root",
+  "name": "overleaf-mcp",
   "version": "1.0.0",
+  "description": "MCP server for seamless Overleaf integration with download/upload capabilities",
   "private": true,
   "scripts": {
     "build": "cd overleaf-mcp-server && npm run build",
-    "start": "cd overleaf-mcp-server && npm start"
+    "start": "cd overleaf-mcp-server && npm start",
+    "dev": "cd overleaf-mcp-server && npm run dev",
+    "auth": "cd overleaf-mcp-server && npm run smart-auth"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "keywords": [
+    "overleaf",
+    "mcp",
+    "latex",
+    "collaboration",
+    "download",
+    "upload",
+    "browser-automation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/overleaf-mcp.git"
+  },
+  "author": "Nikhil",
+  "license": "MIT"
 }

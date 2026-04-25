@@ -17,6 +17,12 @@ export { parseLog, quickValidate } from "./LogParser.js";
 // Open in Overleaf
 export { OpenInOverleafClient, openInOverleaf } from "./OpenInOverleafClient.js";
 
+// Overleaf Git Integration
+export { OverleafGitClient, createOverleafGitClient } from "./OverleafGitClient.js";
+
+// Overleaf Web API (Browser Cookies)
+export { OverleafWebApiClient, createOverleafWebApiClient } from "./OverleafWebApiClient.js";
+
 // CTAN Package Search
 export { CTANClient, ctanClient } from "./CTANClient.js";
 

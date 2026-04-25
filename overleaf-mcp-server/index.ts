@@ -211,20 +211,7 @@ server.resourceTemplate({
     }
 });
 
-// === Ensure directories exist ===
-try {
-    await projectStore.ensureDirectories();
-    console.log("✓ Directories initialized");
-} catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Failed to initialize directories:", errorMessage);
-    if (error instanceof Error && error.stack) {
-        console.error("Stack trace:", error.stack);
-    }
-    process.exit(1);
-}
-
-// === Initialize OAuth if enabled ===
+// === Initialize OAuth imports ===
 import { oauthConfig } from "./lib/oauth/config.js";
 import {
     initializeStore,
@@ -237,22 +224,39 @@ import {
 } from "./lib/oauth/index.js";
 import { validateBearerToken, hasScope } from "./lib/oauth/middleware.js";
 
-if (oauthConfig.enabled) {
+// === Initialize Server ===
+(async () => {
+    // === Ensure directories exist ===
     try {
-        await initializeStore();
-        // Start lazy cleanup timers for OAuth store
-        const { startCleanupTimer } = await import('./lib/oauth/store.js');
-        startCleanupTimer();
-        console.log("🔐 OAuth 2.1 enabled");
+        await projectStore.ensureDirectories();
+        console.log("✓ Directories initialized");
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error("❌ Failed to initialize OAuth:", errorMessage);
+        console.error("❌ Failed to initialize directories:", errorMessage);
         if (error instanceof Error && error.stack) {
             console.error("Stack trace:", error.stack);
         }
         process.exit(1);
     }
-}
+
+    // === Initialize OAuth if enabled ===
+    if (oauthConfig.enabled) {
+        try {
+            await initializeStore();
+            // Start lazy cleanup timers for OAuth store
+            const { startCleanupTimer } = await import('./lib/oauth/store.js');
+            startCleanupTimer();
+            console.log("🔐 OAuth 2.1 enabled");
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error("❌ Failed to initialize OAuth:", errorMessage);
+            if (error instanceof Error && error.stack) {
+                console.error("Stack trace:", error.stack);
+            }
+            process.exit(1);
+        }
+    }
+})();
 
 // Start rate limit cleanup timer
 startRateLimitCleanup();

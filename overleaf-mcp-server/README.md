@@ -1,171 +1,174 @@
 # Overleaf MCP Server
 
-A **100% FREE** LaTeX project management MCP server with compilation via [LaTeX.Online](https://latexonline.cc), [Open in Overleaf](https://www.overleaf.com/devs) integration, and **ChatGPT Deep Research** compatibility.
+A powerful MCP (Model Context Protocol) server that provides seamless integration with Overleaf, enabling automatic download and upload of LaTeX projects with browser automation.
 
 [![Built with mcp-use](https://img.shields.io/badge/Built%20with-mcp--use-blue)](https://mcp-use.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![ChatGPT Compatible](https://img.shields.io/badge/ChatGPT-Deep%20Research-green.svg)](https://platform.openai.com/docs/guides/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Quick Start
+## 🚀 Features
+
+- **✅ Automatic Downloads** - Download entire Overleaf projects with one command
+- **✅ Browser Automation Uploads** - Upload files using real browser interaction (the only method that works with Overleaf)
+- **✅ Smart Authentication** - Automatic cookie extraction and session management
+- **✅ Production Ready** - Clean, tested, and reliable implementation
+
+## 📦 Installation
 
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd overleaf-mcp/overleaf-mcp-server
+
 # Install dependencies
 npm install
 
-# Start development server
-npm run dev
-
-# Access the server
-# MCP endpoint: http://localhost:3000/mcp
-# SSE endpoint: http://localhost:3000/sse
-# Inspector UI: http://localhost:3000/inspector
+# Set up authentication
+npm run smart-auth
 ```
-  
-## Features
 
-- 🆓 **100% Free** - No paid APIs or subscriptions required
-- 📝 **Local Project Management** - Create, read, update, delete LaTeX projects
-- 🔨 **Cloud Compilation** - Compile to PDF via LaTeX.Online (pdflatex, xelatex, lualatex)
-- 🚀 **Open in Overleaf** - Generate URLs to import projects into Overleaf
-- 🤖 **ChatGPT Compatible** - Works with Deep Research and Connectors
-- 📦 **Package Search** - Search CTAN for LaTeX packages
-- 🔍 **Smart Log Parsing** - Extract errors/warnings with line numbers
+## 🔐 Authentication
 
-## MCP Tools (18)
-
-### ChatGPT Deep Research (Required)
-
-| Tool | Description |
-| ---- | ----------- |
-| `search` | Search all projects/files (OpenAI format) |
-| `fetch` | Retrieve full document by ID (OpenAI format) |
-
-### Project Management
-
-| Tool | Description |
-| ---- | ----------- |
-| `latex_create_project` | Create a new LaTeX project |
-| `latex_list_projects` | List all local projects |
-| `latex_delete_project` | Delete a project |
-| `latex_project_status` | Get detailed project info |
-
-### File Operations
-
-| Tool | Description |
-| ---- | ----------- |
-| `latex_list_files` | List files in a project |
-| `latex_read_file` | Read file content |
-| `latex_write_file` | Write content to file |
-| `latex_delete_file` | Delete a file |
-
-### Compilation & Export
-
-| Tool | Description |
-| ---- | ----------- |
-| `latex_compile` | Compile to PDF via LaTeX.Online |
-| `latex_analyze_log` | Parse last compilation log |
-| `latex_open_in_overleaf` | Generate Overleaf URL |
-| `latex_export_zip` | Export project as ZIP |
-
-### Utilities
-
-| Tool | Description |
-| ---- | ----------- |
-| `latex_validate` | Quick syntax validation |
-| `latex_search_packages` | Search CTAN packages |
-| `latex_get_package_info` | Get package details |
-| `latex_get_symbol` | Find LaTeX symbol codes |
-
-## ChatGPT Integration
-
-This server implements OpenAI's MCP specification for **Deep Research** and **Connectors**.
-
-### Setup with ChatGPT
-
-1. Deploy server with a persistent Node.js host and public HTTPS URL
-2. Enable Developer Mode: **Settings → Connectors → Advanced → Developer mode**
-3. Add connector with MCP endpoint: `https://your-server.com/mcp`
-
-### API Usage
+The server uses smart authentication that automatically extracts and manages Overleaf session cookies:
 
 ```bash
-curl https://api.openai.com/v1/responses \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{
-    "model": "o4-mini-deep-research",
-    "input": [{"role": "user", "content": [{"type": "input_text", "text": "Search my LaTeX projects"}]}],
-    "tools": [{
-      "type": "mcp",
-      "server_label": "latex",
-      "server_url": "https://your-server.com/mcp",
-      "allowed_tools": ["search", "fetch"],
-      "require_approval": "never"
-    }]
-  }'
+npm run smart-auth
 ```
 
-If you are using API-based remote MCP integrations, `/sse` remains available as an alternate transport.
+This will:
+- Check for existing valid cookies
+- Guide you through authentication if needed
+- Store cookies securely for automatic use
 
-## MCP Resources (6)
+## 🎯 Usage
 
-| URI | Description |
-| --- | ----------- |
-| `latex://projects` | List of all projects (JSON) |
-| `latex://project/{name}` | Project metadata |
-| `latex://project/{name}/file/{path}` | File content |
-| `latex://project/{name}/log` | Last compilation log |
-| `latex://cheatsheet` | LaTeX quick reference |
-| `latex://symbols` | Symbol reference (JSON) |
+### Start the Server
 
-## MCP Prompts (7)
+```bash
+# Development mode
+npm run dev
 
-- `write_section` - Generate LaTeX sections
-- `fix_errors` - Fix compilation errors
-- `convert_to_latex` - Convert markdown/text to LaTeX
-- `create_table` - Generate booktabs tables
-- `add_citations` - Create BibTeX entries
-- `create_figure` - Generate figure environments
-- `optimize_document` - Suggest improvements
-
-## Configuration
-
-Copy `config.example.json` to `config.json`:
-
-```json
-{
-  "privacy": { "mode": "ask", "warnSize": 5242880 },
-  "compilation": { "engine": "pdflatex", "timeout": 60000 },
-  "cache": { "enabled": true, "maxAge": 3600000 }
-}
+# Production mode
+npm start
 ```
 
-## Architecture
+### Available Tools
 
-```text
+#### Download Projects
+```bash
+# Download entire Overleaf project
+latex_download_from_overleaf(projectId: "your-project-id", projectName: "local-project-name")
+```
+
+#### Upload Files
+```bash
+# Upload files to Overleaf (uses browser automation)
+latex_upload_to_overleaf(
+  projectId: "your-project-id", 
+  filePath: "filename.tex", 
+  content: "Your LaTeX content here"
+)
+```
+
+#### Other Tools
+- `latex_create_project` - Create new Overleaf projects
+- `latex_list_projects` - List your Overleaf projects
+- `latex_compile` - Compile LaTeX documents
+- `latex_analyze_log` - Analyze compilation errors
+- And many more...
+
+## 🧠 How It Works
+
+### Download Functionality
+- Uses Overleaf's HTTP API with session cookies
+- Downloads entire project structure including all files
+- Maintains folder organization and metadata
+
+### Upload Functionality
+- **Browser Automation** - The only method that works with Overleaf
+- Launches Chrome with stealth settings
+- Simulates real user interaction in the Overleaf editor
+- Handles Overleaf's real-time collaboration system
+- Automatically creates files if they don't exist
+
+### Authentication
+- Automatic cookie extraction from browser sessions
+- Supports multiple authentication methods
+- Maintains session state for seamless operation
+
+## 📁 Project Structure
+
+```
 overleaf-mcp-server/
-├── lib/                        # Core libraries
-│   ├── types.ts                # TypeScript interfaces
-│   ├── LocalProjectStore.ts    # File operations & search
-│   ├── LaTeXOnlineClient.ts    # Cloud compilation
-│   ├── LogParser.ts            # Parse LaTeX logs
-│   ├── OpenInOverleafClient.ts # Generate Overleaf URLs
-│   └── CTANClient.ts           # CTAN package search
-├── tools/
-│   └── index.ts                # 18 MCP tool definitions
-├── prompts/
-│   └── index.ts                # 7 MCP prompt definitions
-└── index.ts                    # Server entry point
+├── lib/
+│   └── OverleafWebApiClient.ts    # Core API client
+├── scripts/
+│   └── smart-auth.ts              # Authentication script
+├── tools/                         # MCP tool definitions
+├── resources/                     # MCP resources
+├── prompts/                       # MCP prompts
+├── index.ts                       # Main server file
+└── package.json
 ```
 
-## External Services (All FREE)
+## 🔧 Configuration
 
-| Service | Purpose |
-| ------- | ------- |
-| [LaTeX.Online](https://latexonline.cc) | PDF compilation |
-| [CTAN API](https://ctan.org/json/2.0) | Package search |
-| [Overleaf](https://www.overleaf.com/devs) | Open in Overleaf |
+The server uses environment variables and configuration files:
 
-## License
+- `.env` - Environment variables (copy from `.env.example`)
+- `config.json` - Server configuration (copy from `config.example.json`)
 
-MIT
+## 🚨 Important Notes
+
+### Upload Method
+Overleaf blocks direct API uploads. The browser automation approach:
+- ✅ Works reliably with Overleaf's real-time system
+- ✅ Handles all file types and sizes
+- ✅ Maintains proper formatting and encoding
+- ⚠️ Requires a graphical environment (cannot run in pure headless mode)
+
+### Authentication
+- Cookies are stored in your system's temp directory
+- Authentication expires and needs periodic renewal
+- Use `npm run smart-auth` to refresh authentication
+
+## � Troubleshooting
+
+### Upload Issues
+- Ensure Chrome/Chromium is installed
+- Check that authentication is current (`npm run smart-auth`)
+- Verify the project ID is correct
+
+### Download Issues
+- Check network connectivity
+- Verify project permissions
+- Ensure authentication cookies are valid
+
+### Authentication Issues
+- Run `npm run smart-auth` to refresh
+- Clear old cookies if needed
+- Check Overleaf login status
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📞 Support
+
+For issues and questions:
+- Check the troubleshooting section
+- Review existing issues
+- Create a new issue with detailed information
+
+---
+
+**Built with ❤️ for seamless Overleaf integration**

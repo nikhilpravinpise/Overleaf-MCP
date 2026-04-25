@@ -289,4 +289,46 @@ Output only the LaTeX code, no explanations.`,
             };
         }
     });
+
+    server.prompt({
+        name: "edit_resume",
+        description: "Edit and improve a resume. Use this for making targeted improvements to resume content, formatting, or structure.",
+        schema: z.object({
+            currentContent: z.string().describe("Current resume LaTeX content"),
+            changes: z.string().describe("Description of changes to make (e.g., 'add work experience at Google', 'improve bullet points', 'fix formatting')"),
+            focus: z.string().optional().describe("Specific area to focus on (e.g., 'experience', 'skills', 'education', 'formatting')"),
+        }),
+    }, async ({ currentContent, changes, focus }) => {
+        try {
+            if (!currentContent || typeof currentContent !== 'string' || currentContent.trim().length === 0) {
+                throw new Error('Current resume content is required');
+            }
+            if (!changes || typeof changes !== 'string' || changes.trim().length === 0) {
+                throw new Error('Changes description is required');
+            }
+            const sanitizedChanges = changes.trim();
+            const sanitizedFocus = focus ? focus.trim() : "overall resume";
+            
+            return {
+                messages: [{
+                    role: "user" as const,
+                    content: {
+                        type: "text" as const,
+                        text: `Help me edit my resume with the following changes:\n\n${sanitizedChanges}\n\nFocus area: ${sanitizedFocus}\n\nCurrent resume content:\n\`\`\`latex\n${currentContent}\n\`\`\`\n\nRequirements:\n- Make only the requested changes\n- Preserve the existing LaTeX structure and formatting\n- Keep the same document class and preamble\n- Ensure all LaTeX syntax is correct\n- Output the complete updated LaTeX code`,
+                    },
+                }],
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return {
+                messages: [{
+                    role: "user" as const,
+                    content: {
+                        type: "text" as const,
+                        text: `Error: Unable to process resume edit. ${errorMessage}`,
+                    },
+                }],
+            };
+        }
+    });
 }

@@ -31,3 +31,9 @@ Thumbs.db
 # Skills (if any)
 .github/skills/
 .vercel
+
+# Test files and debug output
+test-*.ts
+test-*/
+debug-*.png
+test-projects.json

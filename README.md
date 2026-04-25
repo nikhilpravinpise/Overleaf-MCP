@@ -1,69 +1,101 @@
-# Overleaf-MCP
+# Overleaf MCP Server
 
-A **100% FREE** Model Context Protocol (MCP) server for LaTeX project management with cloud compilation, Overleaf integration, and **ChatGPT Deep Research** compatibility.
+A powerful MCP (Model Context Protocol) server that provides seamless integration with Overleaf, enabling automatic download and upload of LaTeX projects with browser automation.
 
 [![Built with mcp-use](https://img.shields.io/badge/Built%20with-mcp--use-blue)](https://mcp-use.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![ChatGPT Compatible](https://img.shields.io/badge/ChatGPT-Deep%20Research-green.svg)](https://platform.openai.com/docs/guides/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Overview
+## 🚀 Features
 
-This MCP server enables AI assistants (ChatGPT, Claude, etc.) to manage LaTeX projects, compile documents to PDF, and integrate with Overleaf—all without requiring any paid APIs.
+- **✅ Automatic Downloads** - Download entire Overleaf projects with one command
+- **✅ Browser Automation Uploads** - Upload files using real browser interaction (the only method that works with Overleaf)
+- **✅ Smart Authentication** - Automatic cookie extraction and session management
+- **✅ Production Ready** - Clean, tested, and reliable implementation
 
-### Key Features
-
-- 🆓 **100% Free** - Uses LaTeX.Online for compilation (no payment required)
-- 📝 **Local Project Management** - Create, read, update, delete LaTeX projects
-- 🔨 **Cloud Compilation** - Compile to PDF (pdflatex, xelatex, lualatex)
-- 🚀 **Open in Overleaf** - Generate URLs to import projects into Overleaf
-- 🤖 **ChatGPT Compatible** - Works with Deep Research and Connectors
-- 📦 **Package Search** - Search CTAN for LaTeX packages
-
-## Quick Start
+## 📦 Quick Start
 
 ```bash
+# Navigate to the server directory
 cd overleaf-mcp-server
 
 # Install dependencies
 npm install
 
-# Start development server
+# Set up authentication
+npm run smart-auth
+
+# Start the server
 npm run dev
 ```
 
-Server starts at `http://localhost:3000` with:
+## 🎯 Usage
 
-- MCP endpoint at `/mcp`
-- SSE endpoint at `/sse`
-- Inspector UI at `/inspector`
+### Download Projects
+```bash
+latex_download_from_overleaf(projectId: "your-project-id", projectName: "local-project-name")
+```
 
-## Capabilities
+### Upload Files
+```bash
+latex_upload_to_overleaf(
+  projectId: "your-project-id", 
+  filePath: "filename.tex", 
+  content: "Your LaTeX content here"
+)
+```
 
-| Category | Count | Examples |
-| -------- | ----- | -------- |
-| **Tools** | 18 | `search`, `fetch`, `latex_compile`, `latex_open_in_overleaf` |
-| **Resources** | 6 | `latex://projects`, `latex://cheatsheet` |
-| **Prompts** | 7 | `write_section`, `fix_errors`, `create_table` |
+## 📁 Project Structure
 
-## ChatGPT Integration
+```
+overleaf-mcp/
+├── overleaf-mcp-server/         # Main MCP server
+│   ├── lib/
+│   │   └── OverleafWebApiClient.ts  # Core API client
+│   ├── scripts/
+│   │   └── smart-auth.ts            # Authentication script
+│   ├── tools/                       # MCP tool definitions
+│   ├── resources/                   # MCP resources
+│   ├── prompts/                     # MCP prompts
+│   └── index.ts                     # Main server file
+├── README.md                    # This file
+└── package.json                # Root package.json
+```
 
-This server implements OpenAI's MCP spec for Deep Research. See [server README](./overleaf-mcp-server/README.md) for setup instructions.
+## 🧠 How It Works
 
-## External Services (All FREE)
+### Download Functionality
+- Uses Overleaf's HTTP API with session cookies
+- Downloads entire project structure including all files
+- Maintains folder organization and metadata
 
-| Service | Purpose |
-| ------- | ------- |
-| [LaTeX.Online](https://latexonline.cc) | PDF compilation |
-| [CTAN API](https://ctan.org/json/2.0) | Package search |
-| [Overleaf](https://www.overleaf.com/devs) | Open in Overleaf |
+### Upload Functionality
+- **Browser Automation** - The only method that works with Overleaf
+- Launches Chrome with stealth settings
+- Simulates real user interaction in the Overleaf editor
+- Handles Overleaf's real-time collaboration system
 
-## Documentation
+### Authentication
+- Automatic cookie extraction from browser sessions
+- Maintains session state for seamless operation
 
-- [Server README](./overleaf-mcp-server/README.md) - Full API reference
-- [Architecture](./overleaf-mcp-server/ARCHITECTURE.md) - System design
-- [Contributing](./overleaf-mcp-server/CONTRIBUTING.md) - Development guide
+## 🚨 Important Notes
 
-## License
+### Upload Method
+Overleaf blocks direct API uploads. The browser automation approach:
+- ✅ Works reliably with Overleaf's real-time system
+- ✅ Handles all file types and sizes
+- ⚠️ Requires a graphical environment
 
-MIT
+### Authentication
+- Cookies are stored in your system's temp directory
+- Use `npm run smart-auth` to refresh authentication
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+---
+
+**Built with ❤️ for seamless Overleaf integration**

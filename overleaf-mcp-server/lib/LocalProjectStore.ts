@@ -664,9 +664,15 @@ Welcome to your new LaTeX document!
 
             for (const project of projects) {
                 const files = await this.listFiles(project.name);
-                const texFiles = files.filter(f => f.extension === ".tex");
+                // Search across multiple file types: .tex, .bib, .md, .txt
+                const searchableFiles = files.filter(f => 
+                    f.extension === ".tex" || 
+                    f.extension === ".bib" || 
+                    f.extension === ".md" || 
+                    f.extension === ".txt"
+                );
 
-                for (const file of texFiles) {
+                for (const file of searchableFiles) {
                     try {
                         const content = await this.readFile(project.name, file.path);
                         const contentLower = content.toLowerCase();
